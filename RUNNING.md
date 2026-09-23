@@ -1,0 +1,50 @@
+# Running the Helpdesk Application
+
+## Prerequisites
+- **Docker Desktop** (optional, for containerized run) with Docker Compose support.
+- **Python 3.12+** and `pip` (for local backend execution).
+- **Bun** (recommended for the frontend). Install via:
+  ```
+  curl -fsSL https://bun.sh/install | bash
+  ```
+- **Git** (for version control).
+
+## Option 1: Run with Docker Compose (recommended for production‑like environment)
+1. Ensure Docker Desktop is running.
+2. From the project root, execute:
+   ```
+   docker compose up --build
+   ```
+3. The services will be available at:
+   - Backend API: `http://localhost:8000/api/`
+   - Frontend UI: `http://localhost:5173/`
+
+## Option 2: Run locally without Docker
+### Backend (Django)
+```bash
+# Create a virtual environment
+python -m venv venv
+# Activate it (PowerShell)
+venv\Scripts\Activate.ps1
+# Install dependencies
+pip install -r backend/requirements.txt
+# Apply migrations
+python backend/manage.py migrate
+# Start the development server
+python backend/manage.py runserver
+```
+The API will be reachable at `http://127.0.0.1:8000/api/`.
+
+### Frontend (React + Vite + Bun)
+```bash
+cd frontend
+# Install dependencies using Bun
+bun install
+# Start the development server
+bun dev
+```
+Open `http://localhost:5173` in your browser.
+
+## Notes
+- The frontend fetches tickets from `http://localhost:8000/api/tickets/`. Adjust the URL if the backend is hosted elsewhere.
+- In production, set environment variables for `DJANGO_SECRET_KEY`, `POSTGRES_*`, etc., as described in the `backend/.env.example` file (if added later).
