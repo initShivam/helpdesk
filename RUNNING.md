@@ -39,6 +39,31 @@ python backend/manage.py runserver
 ```
 The API will be reachable at `http://127.0.0.1:8000/api/`.
 
+### Email ingestion worker
+
+Set the IMAP settings in the project-root `.env`:
+
+```text
+EMAIL_IMAP_HOST=imap.gmail.com
+EMAIL_IMAP_PORT=993
+EMAIL_IMAP_USERNAME=your-support-mailbox@example.com
+EMAIL_IMAP_PASSWORD=your-gmail-app-password
+EMAIL_IMAP_MAILBOX=INBOX
+```
+
+Apply migrations, then run the worker and scheduler in separate terminals:
+
+```bash
+python backend/manage.py migrate
+celery -A helpdesk worker -l INFO --workdir backend
+celery -A helpdesk beat -l INFO --workdir backend
+```
+
+The scheduler runs `email_ingestion.tasks.fetch_emails` every five minutes.
+Inbound emails are stored as tickets and ticket messages, duplicate
+`Message-ID` values are ignored, replies with matching thread references reuse
+the original ticket, and attachments are saved under `backend/media/`.
+
 ### Frontend (React + Vite + Bun)
 ```bash
 cd frontend

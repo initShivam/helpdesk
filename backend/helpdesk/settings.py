@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     # Local apps
     'tickets',
     'accounts',
+    'email_ingestion',
 ]
 
 MIDDLEWARE = [
@@ -126,3 +127,15 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
 ]
+
+MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = '/media/'
+
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_BEAT_SCHEDULE = {
+    'fetch-emails-every-five-minutes': {
+        'task': 'email_ingestion.tasks.fetch_emails',
+        'schedule': 300.0,
+    },
+}

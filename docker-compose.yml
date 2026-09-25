@@ -25,11 +25,50 @@ services:
       - ./backend:/app
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
     depends_on:
       - db
       - redis
     ports:
       - "8000:8000"
+
+  celery:
+    build: ./backend
+    command: celery -A helpdesk worker -l INFO
+    volumes:
+      - ./backend:/app
+      - media_data:/app/media
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  celery-beat:
+    build: ./backend
+    command: celery -A helpdesk beat -l INFO
+    volumes:
+      - ./backend:/app
+      - media_data:/app/media
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
 
   frontend:
     build: ./frontend
@@ -45,3 +84,4 @@ services:
 
 volumes:
   postgres_data:
+  media_data:
