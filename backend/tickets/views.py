@@ -5,6 +5,7 @@ from rest_framework.exceptions import NotAuthenticated
 from .models import Ticket, TicketMessage
 from .serializers import TicketSerializer, TicketMessageSerializer
 from .auth import SessionAuthenticationWith401
+from .ai import enrich_ticket
 
 class TicketPermission(permissions.BasePermission):
     """Custom permission for TicketViewSet.
@@ -54,7 +55,8 @@ class TicketViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def perform_create(self, serializer):
-        serializer.save()
+        ticket = serializer.save()
+        enrich_ticket(ticket)
 
 class TicketMessageViewSet(viewsets.ModelViewSet):
     serializer_class = TicketMessageSerializer

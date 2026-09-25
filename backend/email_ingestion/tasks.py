@@ -7,6 +7,7 @@ from django.db import transaction
 from .imap_client import GmailImapClient
 from .models import EmailAttachment, InboundEmail
 from .parser import ParsedEmail, parse_email
+from tickets.ai import enrich_ticket
 from tickets.models import Ticket, TicketMessage
 
 
@@ -40,6 +41,7 @@ def persist_email(parsed: ParsedEmail) -> tuple[InboundEmail, bool]:
         body=parsed.body or "(empty message)",
         message_type="customer",
     )
+    enrich_ticket(ticket, parsed.body)
     inbound = InboundEmail.objects.create(
         message_id=parsed.message_id,
         thread_id=parsed.thread_id,
