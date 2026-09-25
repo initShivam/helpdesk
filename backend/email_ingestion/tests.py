@@ -85,6 +85,7 @@ class EmailIngestionTests(TestCase):
         self.assertEqual(ticket.category, "technical")
         self.assertTrue(ticket.ai_summary)
         self.assertIsNotNone(ticket.ai_category_confidence)
+        self.assertLessEqual(len(ticket.ai_summary), 240)
 
     @patch("email_ingestion.tasks.GmailImapClient")
     def test_fetch_marks_messages_seen_after_persisting(self, client_class):

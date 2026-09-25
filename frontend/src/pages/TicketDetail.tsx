@@ -47,7 +47,13 @@ const TicketDetail: React.FC = () => {
       })
       .then(([ticketData, messagesData]) => {
         setTicket(ticketData);
-        setMessages(Array.isArray(messagesData) ? messagesData : messagesData.results ?? []);
+        setMessages(
+          Array.isArray(messagesData)
+            ? messagesData
+            : Array.isArray(messagesData?.results)
+              ? messagesData.results
+              : [],
+        );
       })
       .catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : 'Unable to load this ticket.');
@@ -181,9 +187,9 @@ const TicketDetail: React.FC = () => {
           {messages.length === 0 ? (
             <p className="text-sm text-slate-500">No messages yet.</p>
           ) : messages.map((message) => (
-            <article key={message.id} className="rounded-xl border border-slate-200 bg-white p-4">
+            <article key={message.id} className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
               <p className="text-xs font-semibold uppercase text-slate-500">{message.message_type}</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{message.body}</p>
+              <p className="mt-2 min-w-0 whitespace-pre-wrap break-words text-sm text-slate-800 [overflow-wrap:anywhere]">{message.body}</p>
             </article>
           ))}
         </section>

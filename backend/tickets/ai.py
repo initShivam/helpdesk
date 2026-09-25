@@ -149,7 +149,7 @@ def enrich_ticket(ticket: Ticket, body: str = "") -> bool:
 
     try:
         analysis = analyze_ticket(ticket.subject, body)
-    except Exception as exc:
+    except (AIAnalysisError, AttributeError, RuntimeError, TypeError, ValueError) as exc:
         logger.exception("Ticket AI analysis failed for ticket %s: %s", ticket.pk, exc)
         return False
 

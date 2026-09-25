@@ -58,6 +58,13 @@ class TicketAIAnalysisTests(TestCase):
         self.assertEqual(analysis.category, "general")
         self.assertEqual(analysis.confidence, 0.5)
 
+    def test_summary_uses_body_and_is_bounded(self):
+        body = " ".join(["A very long student report"] * 100)
+        analysis = analyze_ticket("Issue", body)
+
+        self.assertTrue(analysis.summary.startswith("A very long student report"))
+        self.assertLessEqual(len(analysis.summary), 240)
+
     def test_manual_ticket_creation_runs_analysis(self):
         user = User.objects.create_user(
             username="agent",
