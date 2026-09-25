@@ -49,6 +49,7 @@ EMAIL_IMAP_PORT=993
 EMAIL_IMAP_USERNAME=your-support-mailbox@example.com
 EMAIL_IMAP_PASSWORD=your-gmail-app-password
 EMAIL_IMAP_MAILBOX=INBOX
+EMAIL_IMAP_TIMEOUT=30
 ```
 
 Apply migrations, then run the worker and scheduler in separate terminals:
@@ -63,6 +64,19 @@ The scheduler runs `email_ingestion.tasks.fetch_emails` every five minutes.
 Inbound emails are stored as tickets and ticket messages, duplicate
 `Message-ID` values are ignored, replies with matching thread references reuse
 the original ticket, and attachments are saved under `backend/media/`.
+
+If Docker/Redis is unavailable, run the local polling command instead. It
+connects directly to IMAP and does not require Celery or Redis:
+
+```bash
+python backend/manage.py poll_emails
+```
+
+For a one-time mailbox check:
+
+```bash
+python backend/manage.py poll_emails --once
+```
 
 ### Frontend (React + Vite + Bun)
 ```bash

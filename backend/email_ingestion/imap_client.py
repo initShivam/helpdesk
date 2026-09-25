@@ -11,18 +11,24 @@ class GmailImapClient:
         username: str | None = None,
         password: str | None = None,
         mailbox: str | None = None,
+        timeout: int | None = None,
     ):
         self.host = host or os.getenv("EMAIL_IMAP_HOST", "imap.gmail.com")
         self.port = port or int(os.getenv("EMAIL_IMAP_PORT", "993"))
         self.username = username or os.getenv("EMAIL_IMAP_USERNAME", "")
         self.password = password or os.getenv("EMAIL_IMAP_PASSWORD", "")
         self.mailbox = mailbox or os.getenv("EMAIL_IMAP_MAILBOX", "INBOX")
+        self.timeout = timeout or int(os.getenv("EMAIL_IMAP_TIMEOUT", "30"))
         self.connection: imaplib.IMAP4_SSL | None = None
 
     def __enter__(self):
         if not self.username or not self.password:
             raise RuntimeError("EMAIL_IMAP_USERNAME and EMAIL_IMAP_PASSWORD are required")
-        self.connection = imaplib.IMAP4_SSL(self.host, self.port)
+        self.connection = imaplib.IMAP4_SSL(
+            self.host,
+            self.port,
+            timeout=self.timeout,
+        )
         self.connection.login(self.username, self.password)
         status, _ = self.connection.select(self.mailbox)
         if status != "OK":
