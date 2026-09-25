@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import NavBar from './components/NavBar';
 import { AuthContext } from './context/AuthContext';
+import { Link } from 'react-router-dom';
 
 interface Ticket {
   id: number;
@@ -243,7 +244,9 @@ const App: React.FC = () => {
                   {filteredTickets.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-50/80 transition">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
-                        {t.ticket_number}
+                        <Link to={`/tickets/${t.id}`} className="hover:underline">
+                          {t.ticket_number}
+                        </Link>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-900">
                         <div className="font-medium text-slate-900">{t.subject}</div>
