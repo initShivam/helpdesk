@@ -29,6 +29,9 @@ const TicketDetail: React.FC = () => {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reply, setReply] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -50,6 +53,72 @@ const TicketDetail: React.FC = () => {
         setError(reason instanceof Error ? reason.message : 'Unable to load this ticket.');
       });
   }, [id]);
+
+  const getCsrfToken = async () => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/csrf/`, {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      throw new Error('Unable to initialize a secure ticket update.');
+    }
+    const data = await response.json();
+    return data.csrfToken as string;
+  };
+
+  const updateTicket = async (status: string) => {
+    if (!id) return;
+    setActionError(null);
+    setIsSaving(true);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        throw new Error('Unable to update the ticket status.');
+      }
+      setTicket(await response.json());
+    } catch (reason: unknown) {
+      setActionError(reason instanceof Error ? reason.message : 'Ticket update failed.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const addReply = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!id || !reply.trim()) return;
+    setActionError(null);
+    setIsSaving(true);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/messages/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        body: JSON.stringify({ body: reply.trim(), message_type: 'agent' }),
+      });
+      if (!response.ok) {
+        throw new Error('Unable to add the reply.');
+      }
+      const message = await response.json();
+      setMessages((current) => [...current, message]);
+      setReply('');
+    } catch (reason: unknown) {
+      setActionError(reason instanceof Error ? reason.message : 'Reply could not be added.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (error) {
     return <main className="p-8 text-red-600">{error}</main>;
@@ -73,6 +142,29 @@ const TicketDetail: React.FC = () => {
             <span>Category: <strong>{ticket.category}</strong></span>
             <span>Priority: <strong>{ticket.priority}</strong></span>
           </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            {ticket.status === 'open' && (
+              <button
+                type="button"
+                onClick={() => updateTicket('resolved')}
+                disabled={isSaving}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {isSaving ? 'Saving...' : 'Resolve ticket'}
+              </button>
+            )}
+            {ticket.status === 'resolved' && (
+              <button
+                type="button"
+                onClick={() => updateTicket('open')}
+                disabled={isSaving}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Reopen ticket
+              </button>
+            )}
+          </div>
+          {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
           {ticket.ai_summary && (
             <div className="mt-5 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">
               <strong>AI summary:</strong> {ticket.ai_summary}
@@ -95,6 +187,26 @@ const TicketDetail: React.FC = () => {
             </article>
           ))}
         </section>
+        <form onSubmit={addReply} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <label htmlFor="reply" className="text-lg font-semibold text-slate-900">
+            Add final reply
+          </label>
+          <textarea
+            id="reply"
+            value={reply}
+            onChange={(event) => setReply(event.target.value)}
+            rows={4}
+            placeholder="Write a response for the requester..."
+            className="mt-3 w-full rounded-lg border border-slate-300 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          />
+          <button
+            type="submit"
+            disabled={isSaving || !reply.trim()}
+            className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isSaving ? 'Sending...' : 'Add reply'}
+          </button>
+        </form>
       </div>
     </main>
   );
