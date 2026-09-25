@@ -16,6 +16,7 @@ def make_email(
     subject="Printer issue",
     thread_id="",
     attachment=False,
+    body="The printer is not working.",
 ):
     message = EmailMessage()
     message["From"] = "Customer <customer@example.com>"
@@ -24,7 +25,7 @@ def make_email(
     message["Message-ID"] = message_id
     if thread_id:
         message["References"] = thread_id
-    message.set_content("The printer is not working.")
+    message.set_content(body)
     if attachment:
         message.add_attachment(
             b"file contents",
@@ -96,6 +97,21 @@ class EmailIngestionTests(TestCase):
 
         self.assertEqual(result, {"created": 1, "skipped": 0})
         client.mark_seen.assert_called_once_with(b"1")
+
+    def test_email_priority_is_calculated_from_urgency(self):
+        inbound, created = persist_email(
+            parse_email(
+                make_email(
+                    message_id="<urgent@example.com>",
+                    subject="Exam portal outage",
+                    body="The system is down and my exam is today. Please help ASAP.",
+                )
+            )
+        )
+
+        self.assertTrue(created)
+        inbound.ticket.refresh_from_db()
+        self.assertEqual(inbound.ticket.priority, "high")
 
     def test_celery_discovers_fetch_task(self):
         from helpdesk.celery import app

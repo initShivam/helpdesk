@@ -16,6 +16,7 @@ class AIAnalysisError(Exception):
 @dataclass(frozen=True)
 class TicketAnalysis:
     category: str
+    priority: str
     summary: str
     confidence: float
 
@@ -60,6 +61,29 @@ _CATEGORY_KEYWORDS = {
     },
 }
 
+_HIGH_PRIORITY_SIGNALS = {
+    "urgent",
+    "emergency",
+    "critical",
+    "immediately",
+    "asap",
+    "system down",
+    "outage",
+    "cannot access",
+    "can't access",
+    "unable to access",
+    "deadline today",
+    "exam today",
+}
+_LOW_PRIORITY_SIGNALS = {
+    "when possible",
+    "not urgent",
+    "general question",
+    "suggestion",
+    "feedback",
+    "information",
+}
+
 
 def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
@@ -95,6 +119,16 @@ def _summary(subject: str, body: str) -> str:
     return first_sentence[:240].rstrip()
 
 
+def _priority(text: str) -> str:
+    high_matches = sum(signal in text for signal in _HIGH_PRIORITY_SIGNALS)
+    low_matches = sum(signal in text for signal in _LOW_PRIORITY_SIGNALS)
+    if high_matches:
+        return "high"
+    if low_matches:
+        return "low"
+    return "medium"
+
+
 def analyze_ticket(subject: str, body: str = "") -> TicketAnalysis:
     """Analyze ticket text using deterministic local heuristics."""
 
@@ -104,6 +138,7 @@ def analyze_ticket(subject: str, body: str = "") -> TicketAnalysis:
     category, confidence = _classify(text)
     return TicketAnalysis(
         category=category,
+        priority=_priority(text),
         summary=_summary(normalized_subject, normalized_body),
         confidence=confidence,
     )
@@ -119,11 +154,13 @@ def enrich_ticket(ticket: Ticket, body: str = "") -> bool:
         return False
 
     ticket.category = analysis.category
+    ticket.priority = analysis.priority
     ticket.ai_summary = analysis.summary
     ticket.ai_category_confidence = analysis.confidence
     ticket.save(
         update_fields=[
             "category",
+            "priority",
             "ai_summary",
             "ai_category_confidence",
             "updated_at",

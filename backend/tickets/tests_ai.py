@@ -31,6 +31,27 @@ class TicketAIAnalysisTests(TestCase):
         self.assertGreaterEqual(analysis.confidence, 0)
         self.assertLessEqual(analysis.confidence, 1)
 
+    def test_assigns_high_priority_to_urgent_ticket(self):
+        analysis = analyze_ticket(
+            "Cannot access exam portal",
+            "The system is down and my exam is today. Please help ASAP.",
+        )
+
+        self.assertEqual(analysis.priority, "high")
+
+    def test_assigns_low_priority_to_non_urgent_request(self):
+        analysis = analyze_ticket(
+            "Product suggestion",
+            "When possible, please consider this feedback.",
+        )
+
+        self.assertEqual(analysis.priority, "low")
+
+    def test_assigns_medium_priority_by_default(self):
+        analysis = analyze_ticket("Printer issue", "The printer is not working.")
+
+        self.assertEqual(analysis.priority, "medium")
+
     def test_unmatched_ticket_defaults_to_general(self):
         analysis = analyze_ticket("Welcome", "I would like to contact support.")
 
@@ -60,6 +81,7 @@ class TicketAIAnalysisTests(TestCase):
         self.assertEqual(response.status_code, 201)
         ticket = Ticket.objects.get(ticket_number="AI-001")
         self.assertEqual(ticket.category, "refund")
+        self.assertEqual(ticket.priority, "medium")
         self.assertTrue(ticket.ai_summary)
         self.assertIsNotNone(ticket.ai_category_confidence)
 
@@ -95,5 +117,6 @@ class TicketAIAnalysisTests(TestCase):
         self.assertFalse(succeeded)
         ticket.refresh_from_db()
         self.assertEqual(ticket.category, "general")
+        self.assertEqual(ticket.priority, "medium")
         self.assertIsNone(ticket.ai_summary)
         self.assertIsNone(ticket.ai_category_confidence)
