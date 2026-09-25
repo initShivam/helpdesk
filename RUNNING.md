@@ -20,6 +20,10 @@
    - Frontend UI: `http://localhost:5173/`
 
 ## Option 2: Run locally without Docker
+Before starting the backend locally, ensure the project-root `.env` contains the
+PostgreSQL settings (`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`,
+`POSTGRES_HOST`, and `POSTGRES_PORT`). Django loads this file automatically.
+
 ### Backend (Django)
 ```bash
 # Create a virtual environment

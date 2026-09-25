@@ -5,8 +5,11 @@ Generated via Context7 documentation for Django 5.x.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR.parent / '.env')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'replace-this-with-a-secure-key')
@@ -26,6 +29,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Third‑party
     'rest_framework',
+    'django_filters',
     'corsheaders',
     # Local apps
     'tickets',
@@ -108,22 +112,17 @@ AUTH_USER_MODEL = 'accounts.User'
 # Django REST Framework defaults – use session authentication
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'tickets.auth.SessionAuthenticationWith401',
     ],
 }
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-}
-
-# CORS – allow the frontend (running on localhost:5173 by default)
+# CORS – allow either hostname commonly used by the local Vite server.
 CORS_ALLOW_CREDENTIALS = True
-CORS_ORIGIN_WHITELIST = ['http://localhost:5173']
+CORS_ORIGIN_WHITELIST = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]

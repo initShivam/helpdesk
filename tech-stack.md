@@ -1,7 +1,7 @@
 # Technical Stack
  
 ## Authentication
-- **Method:** Django JWT with database sessions (session data stored in PostgreSQL)
+- **Method:** Django session authentication with session data stored in PostgreSQL
 
 ## Frontend
 - **Framework:** React + TypeScript

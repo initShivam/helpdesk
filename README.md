@@ -5,7 +5,7 @@
 | Phase | Description | Depends On |
 |------|-------------|-------------|
 | **Phase 0 – Foundation** | Project scaffolding, CI/CD, core services, shared utilities (logging, config, health checks). | – |
-| **Phase 1 – Authentication & RBAC** | User & agent accounts, role definitions (ADMIN, AGENT), JWT/OAuth flow, permission checks in all backend endpoints. | Phase 0 |
+| **Phase 1 – Authentication & RBAC** | User & agent accounts, role definitions (ADMIN, AGENT), Django session authentication, permission checks in all backend endpoints. | Phase 0 |
 | **Phase 2 – Ticket Management** | CRUD for tickets, ticket lifecycle, basic UI. | Phase 1 |
 | **Phase 3 – AI Classification & Summary** | Text classification, automatic ticket summarisation, confidence scoring. | Phase 2 |
 | **Phase 4 – Knowledge‑Base & RAG** | Retrieval‑augmented generation against KB, vector store abstraction (configurable embedding model). | Phase 3 |
@@ -39,7 +39,7 @@ Foundation → Auth/RBAC → Ticket Management → AI Classification → KB/RAG 
 
 ## Implementation Order (high‑level roadmap)
 1. **Phase 0 – Foundation** – repo, CI/CD, logging, health checks.
-2. **Phase 1 – Authentication & RBAC** – user/role models, JWT/OAuth, admin UI.
+2. **Phase 1 – Authentication & RBAC** – user/role models, Django sessions, admin UI.
 3. **Phase 2 – Ticket Management** – ticket model, CRUD, UI.
 4. **Phase 3 – AI Classification & Summary** – AI pipeline, confidence fields.
 5. **Phase 4 – Knowledge‑Base & RAG** – vector store abstraction, configurable embedding model.
