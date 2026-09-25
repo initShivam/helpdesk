@@ -70,7 +70,6 @@ const App: React.FC = () => {
 
   const getPriorityBadge = (priority: string) => {
     switch (priority?.toLowerCase()) {
-      case 'urgent':
       case 'high':
         return 'bg-red-50 text-red-700 border-red-200';
       case 'medium':
@@ -86,9 +85,6 @@ const App: React.FC = () => {
     switch (status?.toLowerCase()) {
       case 'open':
         return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'in_progress':
-      case 'pending':
-        return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'resolved':
       case 'closed':
         return 'bg-slate-100 text-slate-600 border-slate-200';
@@ -174,7 +170,7 @@ const App: React.FC = () => {
 
             {/* Filter by status */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-              {(['all', 'open', 'in_progress', 'resolved'] as const).map((st) => (
+              {(['all', 'open', 'resolved', 'closed'] as const).map((st) => (
                 <button
                   key={st}
                   onClick={() => setFilterStatus(st)}
@@ -184,7 +180,7 @@ const App: React.FC = () => {
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  {st === 'in_progress' ? 'In Progress' : st}
+                  {st}
                 </button>
               ))}
             </div>

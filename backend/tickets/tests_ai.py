@@ -79,3 +79,21 @@ class TicketAIAnalysisTests(TestCase):
         ticket.refresh_from_db()
         self.assertIsNone(ticket.ai_summary)
         self.assertIsNone(ticket.ai_category_confidence)
+
+    def test_unexpected_analysis_failure_does_not_block_ticket_creation(self):
+        ticket = Ticket.objects.create(
+            ticket_number="AI-003",
+            subject="Needs review",
+            requester_email="customer@example.com",
+        )
+        with patch(
+            "tickets.ai.analyze_ticket",
+            side_effect=RuntimeError("unexpected analyzer failure"),
+        ):
+            succeeded = enrich_ticket(ticket)
+
+        self.assertFalse(succeeded)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.category, "general")
+        self.assertIsNone(ticket.ai_summary)
+        self.assertIsNone(ticket.ai_category_confidence)
