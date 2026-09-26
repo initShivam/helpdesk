@@ -88,9 +88,12 @@ database configuration. E2E database details are set in `.env`:
 - `E2E_POSTGRES_PASSWORD=admin` (PostgreSQL password)
 
 The `playwright.config.ts` loads these variables automatically. The database is
-isolated from development; each E2E test run uses a fresh schema. All generated
-Playwright artifacts and the E2E database are git-ignored. No end-to-end test
-cases are included yet.
+isolated from development, and Playwright's configured server runs migrations
+before startup. All generated Playwright artifacts are git-ignored.
+
+To add tests for a requested behavior, use the repository's `/create-test` prompt.
+It directs test authoring to the existing Django or Playwright conventions and
+requires the Playwright E2E database to remain isolated on PostgreSQL.
 
 ---
 
