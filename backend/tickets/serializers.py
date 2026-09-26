@@ -1,7 +1,18 @@
 from rest_framework import serializers
 from .models import Ticket, TicketMessage
+from email_ingestion.serializers import EmailAttachmentSerializer
 
 class TicketSerializer(serializers.ModelSerializer):
+    attachments = serializers.SerializerMethodField()
+
+    def get_attachments(self, obj):
+        attachments = EmailAttachmentSerializer(
+            [attachment for inbound in obj.inbound_emails.all() for attachment in inbound.attachments.all()],
+            many=True,
+            context=self.context,
+        )
+        return attachments.data
+
     """Serializer for the Ticket model.
 
     * `created_by`, `created_at`, and `updated_at` are read‑only – they are set automatically.
@@ -15,6 +26,7 @@ class TicketSerializer(serializers.ModelSerializer):
             "id",
             "ticket_number",
             "subject",
+            "description",
             "requester_email",
             "status",
             "category",
@@ -26,6 +38,7 @@ class TicketSerializer(serializers.ModelSerializer):
             "assigned_to",
             "created_at",
             "updated_at",
+            "attachments",
         ]
         read_only_fields = ["id", "created_by", "created_at", "updated_at"]
 
@@ -53,8 +66,17 @@ class TicketMessageSerializer(serializers.ModelSerializer):
             "message_type",
             "created_at",
             "updated_at",
+            "is_ai_generated",
+            "is_draft",
         ]
-        read_only_fields = ["id", "ticket", "sender", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "ticket",
+            "sender",
+            "created_at",
+            "updated_at",
+            "is_ai_generated",
+        ]
 
     def create(self, validated_data):
         request = self.context.get("request")

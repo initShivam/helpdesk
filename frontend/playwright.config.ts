@@ -23,7 +23,11 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'python manage.py migrate --noinput && python manage.py runserver 127.0.0.1:8001',
+      command:
+        '.\\.venv\\Scripts\\python.exe manage.py migrate --noinput && .\\.venv\\Scripts\\python.exe manage.py shell -c "from accounts.models import User; ' +
+        "u, _ = User.objects.get_or_create(username='e2e-user', defaults={'email':'e2e-user@example.com','role':User.ROLE_AGENT}); " +
+        "u.email='e2e-user@example.com'; u.role=User.ROLE_AGENT; u.set_password('E2ePass123!'); u.save()" +
+        '" && .\\.venv\\Scripts\\python.exe manage.py runserver 127.0.0.1:8001',
       cwd: '../backend',
       url: `${backendUrl}/health/`,
       reuseExistingServer: !process.env.CI,

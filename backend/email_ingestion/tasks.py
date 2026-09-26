@@ -32,6 +32,7 @@ def persist_email(parsed: ParsedEmail) -> tuple[InboundEmail, bool]:
         ticket = Ticket.objects.create(
             ticket_number=_ticket_number(),
             subject=(parsed.subject or "(no subject)")[:255],
+            description=parsed.body or '',
             requester_email=parsed.sender_email,
             source="email",
         )

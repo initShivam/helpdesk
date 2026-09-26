@@ -1,9 +1,9 @@
-FROM oven/bun:latest AS base
+FROM node:20-alpine AS base
 WORKDIR /app
 
 # Copy package files and install dependencies
-COPY package.json bun.lockb ./
-RUN bun install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Copy the rest of the source code
 COPY . .
@@ -12,4 +12,4 @@ COPY . .
 EXPOSE 5173
 
 # Default command to start dev server
-CMD ["bun", "dev"]
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'tickets',
     'accounts',
     'email_ingestion',
+    'knowledge_base',
 ]
 
 MIDDLEWARE = [
@@ -179,10 +180,14 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ORIGIN_WHITELIST = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5174',
 ]
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5174',
 ]
 
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -196,3 +201,9 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': 300.0,
     },
 }
+
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
+GEMINI_EMBEDDING_MODEL = os.getenv('GEMINI_EMBEDDING_MODEL', 'text-embedding-004')
+PGVECTOR_ENABLED = os.getenv('PGVECTOR_ENABLED', 'False') == 'True'
+AI_SUGGESTION_TIMEOUT = int(os.getenv('AI_SUGGESTION_TIMEOUT', '30'))

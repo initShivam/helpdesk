@@ -1,54 +1,65 @@
-# AI-Powered Ticket Management System
+# Product Scope
 
 ## Problem
 
-We receive hundreds of support emails daily. Our agents manually read, classify, and respond to each ticket — which is slow and leads to impersonal, canned responses.
+Support teams receive a large volume of email and spend significant time
+manually classifying, routing, and answering requests. Helpdesk provides a
+shared ticket workflow with optional AI assistance so agents can respond faster
+without losing human review.
 
-## Solution
+## Product capabilities
 
-Build a ticket management system that uses AI to automatically classify, respond to, and route support tickets — delivering faster, more personalized responses to students while freeing up agents for complex issues.
+- Convert inbound support email into tickets and messages.
+- Track ticket status, category, assignment, priority, and conversation history.
+- Search, filter, and sort tickets.
+- Store and download message attachments securely.
+- Index Markdown and PDF knowledge-base documents.
+- Retrieve relevant knowledge-base context for AI requests.
+- Generate, edit, and accept suggested replies as an agent-controlled action.
+- Provide administrator-only agent management.
 
-## Features
+## Ticket behavior
 
-- Receive support emails and create tickets
-- Auto‑generate human‑friendly responses using a knowledge base
-- Ticket list with filtering and sorting
-- Ticket detail view
-- AI‑powered ticket classification
-- AI summaries
-- AI‑suggested replies
-- User management (admin only)
-- Dashboard to view and manage all tickets
-
-## Ticket Statuses
+### Statuses
 
 - Open
 - Resolved
 - Closed
 
-## Ticket Categories
+### Categories
 
 - General Question
 - Technical Question
 - Refund Request
 
-## User Roles
+### Roles
 
-- **Admin**: Deployed with the system. Can create and manage agents.
-- **Agent**: Created by admin. Can view and manage tickets.
+- **Admin** - manages agent accounts and has administrative access.
+- **Agent** - views and manages tickets and can review AI suggestions.
 
----
+## User experience
 
+The frontend provides:
 
+- Login and session-aware protected routes.
+- Ticket list with search, filters, and ordering controls.
+- Ticket detail with messages, attachments, status actions, and replies.
+- AI suggestion controls with loading, editing, and acceptance states.
+- Administrator agent management.
 
-## Open Questions & Next Steps
+## Scope boundaries
 
-- Choose a cloud provider for managed services (e.g., GCP, AWS, Azure).  
-- Define exact Gemini model and SDK integration details.  
-- Decide on embedding model (e.g., `text‑embedding‑ada‑002`).  
-- Set up Gmail OAuth credentials and token storage strategy.  
-- Determine monitoring and alerting stack for production.  
-- Plan CI/CD secret management (Docker Hub, Gemini API key, JWT secret).  
-- Establish backup & recovery procedures for PostgreSQL and vector data.
+The following are not part of the completed Phases 0-3:
 
-*This document reflects the current project scope and technical decisions as of 2026‑09‑23.*
+- Classification and summary automation as separate Phase 4 workflows.
+- Analytics dashboard and operational metrics.
+- Production monitoring, audit logs, backup drills, and deployment automation.
+- Kubernetes or Helm deployment.
+
+## Product decisions still required
+
+- Cloud provider and production region.
+- Production monitoring and alerting stack.
+- Gmail OAuth credential and token-storage policy.
+- Backup retention and restore objectives.
+- CI/CD secret-management policy.

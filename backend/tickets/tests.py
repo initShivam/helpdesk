@@ -43,6 +43,7 @@ class TicketAPIPermissionsTest(TestCase):
         data = {
             "ticket_number": "TCKT-002",
             "subject": "New ticket",
+            "description": "A detailed ticket description.",
             "requester_email": "new@example.com",
             "status": "open",
             "category": "general",
@@ -50,6 +51,7 @@ class TicketAPIPermissionsTest(TestCase):
         }
         resp = self.client.post('/api/tickets/', data, format='json')
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["description"], "A detailed ticket description.")
         new_id = resp.data['id']
         # Update
         update_data = {"status": "resolved"}
@@ -59,6 +61,36 @@ class TicketAPIPermissionsTest(TestCase):
         resp = self.client.delete(f'/api/tickets/{new_id}/')
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
         self.client.logout()
+
+    def test_ticket_list_supports_filters_search_and_ordering(self):
+        from tickets.models import Ticket
+
+        Ticket.objects.create(
+            ticket_number="TCKT-LOW",
+            subject="Printer issue",
+            description="Printer is offline.",
+            requester_email="printer@example.com",
+            status="resolved",
+            category="technical",
+            priority="low",
+        )
+        self.client.login(username="agent", password="agentpass")
+
+        filtered = self.client.get("/api/tickets/?status=resolved&category=technical")
+        self.assertEqual(filtered.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(filtered.data), 1)
+        self.assertEqual(filtered.data[0]["ticket_number"], "TCKT-LOW")
+
+        searched = self.client.get("/api/tickets/?search=Printer")
+        self.assertEqual(searched.status_code, status.HTTP_200_OK)
+        self.assertEqual(searched.data[0]["ticket_number"], "TCKT-LOW")
+
+        ordered = self.client.get("/api/tickets/?ordering=created_at")
+        self.assertEqual(ordered.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {ticket["ticket_number"] for ticket in ordered.data},
+            {"TCKT-001", "TCKT-LOW"},
+        )
 
     def test_admin_can_delete(self):
         self.client.login(username='admin', password='adminpass')

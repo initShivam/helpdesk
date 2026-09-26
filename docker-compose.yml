@@ -1,9 +1,7 @@
 # Docker Compose configuration for the Helpdesk full‑stack app
-version: "3.9"
-
 services:
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -28,7 +26,7 @@ services:
       timeout: 5s
       retries: 10
 
-  backend:
+  web:
     build: ./backend
     command: bash -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     volumes:
@@ -40,6 +38,7 @@ services:
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      PGVECTOR_ENABLED: "True"
     depends_on:
       db:
         condition: service_healthy
@@ -66,6 +65,7 @@ services:
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      PGVECTOR_ENABLED: "True"
     depends_on:
       db:
         condition: service_healthy
@@ -85,6 +85,7 @@ services:
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      PGVECTOR_ENABLED: "True"
     depends_on:
       db:
         condition: service_healthy
@@ -93,7 +94,7 @@ services:
 
   frontend:
     build: ./frontend
-    command: bun dev
+    command: npm run dev -- --host 0.0.0.0
     volumes:
       - ./frontend:/app
     env_file:
@@ -101,7 +102,7 @@ services:
     ports:
       - "5173:5173"
     depends_on:
-      - backend
+      - web
 
 volumes:
   postgres_data:

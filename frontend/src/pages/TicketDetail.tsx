@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiJson, API_BASE_URL, getCsrfToken } from '../api';
 
 interface Ticket {
   id: number;
@@ -12,6 +14,15 @@ interface Ticket {
   ai_summary?: string | null;
   ai_category_confidence?: number | null;
   created_at: string;
+  attachments?: Attachment[];
+}
+
+interface Attachment {
+  id: number;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  download_url: string;
 }
 
 interface TicketMessage {
@@ -20,56 +31,39 @@ interface TicketMessage {
   message_type: string;
   sender?: number | null;
   created_at: string;
+  is_ai_generated?: boolean;
+  is_draft?: boolean;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 const TicketDetail: React.FC = () => {
   const { id } = useParams();
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [messages, setMessages] = useState<TicketMessage[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [suggestionDraft, setSuggestionDraft] = useState('');
 
-  useEffect(() => {
-    if (!id) return;
-    Promise.all([
-      fetch(`${API_BASE_URL}/api/tickets/${id}/`, { credentials: 'include' }),
-      fetch(`${API_BASE_URL}/api/tickets/${id}/messages/`, { credentials: 'include' }),
-    ])
-      .then(async ([ticketResponse, messagesResponse]) => {
-        if (!ticketResponse.ok || !messagesResponse.ok) {
-          throw new Error('Unable to load this ticket.');
-        }
-        return Promise.all([ticketResponse.json(), messagesResponse.json()]);
-      })
-      .then(([ticketData, messagesData]) => {
-        setTicket(ticketData);
-        setMessages(
-          Array.isArray(messagesData)
-            ? messagesData
-            : Array.isArray(messagesData?.results)
-              ? messagesData.results
-              : [],
-        );
-      })
-      .catch((reason: unknown) => {
-        setError(reason instanceof Error ? reason.message : 'Unable to load this ticket.');
-      });
-  }, [id]);
-
-  const getCsrfToken = async () => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/csrf/`, {
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      throw new Error('Unable to initialize a secure ticket update.');
-    }
-    const data = await response.json();
-    return data.csrfToken as string;
+  const ticketQuery = useQuery({
+    queryKey: ['ticket', id],
+    queryFn: () => apiJson<Ticket>(`/api/tickets/${id}/`),
+    enabled: Boolean(id),
+  });
+  const messagesQuery = useQuery({
+    queryKey: ['ticket-messages', id],
+    queryFn: async () => {
+      const data = await apiJson<TicketMessage[] | { results: TicketMessage[] }>(`/api/tickets/${id}/messages/`);
+      return Array.isArray(data) ? data : data.results;
+    },
+    enabled: Boolean(id),
+  });
+  const ticket = ticketQuery.data ?? null;
+  const messages = messagesQuery.data ?? [];
+  const setMessages = (updater: (current: TicketMessage[]) => TicketMessage[]) => {
+    queryClient.setQueryData<TicketMessage[]>(['ticket-messages', id], (current = []) => updater(current));
   };
+  const error = ticketQuery.error || messagesQuery.error;
 
   const updateTicket = async (status: string) => {
     if (!id) return;
@@ -89,7 +83,7 @@ const TicketDetail: React.FC = () => {
       if (!response.ok) {
         throw new Error('Unable to update the ticket status.');
       }
-      setTicket(await response.json());
+      await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
     } catch (reason: unknown) {
       setActionError(reason instanceof Error ? reason.message : 'Ticket update failed.');
     } finally {
@@ -116,7 +110,7 @@ const TicketDetail: React.FC = () => {
       if (!response.ok) {
         throw new Error('Unable to add the reply.');
       }
-      const message = await response.json();
+      const message = await response.json() as TicketMessage;
       setMessages((current) => [...current, message]);
       setReply('');
     } catch (reason: unknown) {
@@ -126,10 +120,82 @@ const TicketDetail: React.FC = () => {
     }
   };
 
+  const suggestReply = async () => {
+    if (!id) return;
+    setSuggestionError(null);
+    setIsSuggesting(true);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/suggest-reply/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': csrfToken },
+      });
+      if (!response.ok) {
+        throw new Error('Unable to generate an AI suggestion.');
+      }
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const statusResponse = await fetch(
+          `${API_BASE_URL}/api/tickets/${id}/suggestion-status/`,
+          { credentials: 'include' },
+        );
+        const data = await statusResponse.json();
+        if (data.status === 'succeeded' && data.message) {
+          setMessages((current) => [
+            ...current.filter((message) => message.id !== data.message.id),
+            data.message,
+          ]);
+          setSuggestionDraft(data.message.body);
+          return;
+        }
+        if (data.status === 'failed') {
+          throw new Error(data.error_message || 'AI suggestion generation failed.');
+        }
+      }
+      throw new Error('AI suggestion generation timed out.');
+    } catch (reason: unknown) {
+      setSuggestionError(reason instanceof Error ? reason.message : 'AI suggestion failed.');
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+  const acceptSuggestion = async (message: TicketMessage) => {
+    if (!id) return;
+    setSuggestionError(null);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/accept-suggestion/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        body: JSON.stringify({
+          message_id: message.id,
+          body: suggestionDraft.trim() || message.body,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error('Unable to accept the AI suggestion.');
+      }
+      const updated = await response.json();
+      setMessages((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (reason: unknown) {
+      setSuggestionError(reason instanceof Error ? reason.message : 'Unable to accept suggestion.');
+    }
+  };
+
   if (error) {
-    return <main className="p-8 text-red-600">{error}</main>;
+    return (
+      <main className="p-8 text-red-600">
+        {error instanceof Error ? error.message : 'Unable to load this ticket.'}
+      </main>
+    );
   }
-  if (!ticket) {
+  if (ticketQuery.isLoading || messagesQuery.isLoading || !ticket) {
     return <main className="p-8 text-slate-500">Loading ticket...</main>;
   }
 
@@ -171,6 +237,7 @@ const TicketDetail: React.FC = () => {
             )}
           </div>
           {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
+          {suggestionError && <p className="mt-3 text-sm text-red-600">{suggestionError}</p>}
           {ticket.ai_summary && (
             <div className="mt-5 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">
               <strong>AI summary:</strong> {ticket.ai_summary}
@@ -181,6 +248,23 @@ const TicketDetail: React.FC = () => {
               )}
             </div>
           )}
+          {ticket.attachments && ticket.attachments.length > 0 && (
+            <div className="mt-5">
+              <h2 className="text-sm font-semibold text-slate-900">Attachments</h2>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {ticket.attachments.map((attachment) => (
+                  <a
+                    key={attachment.id}
+                    href={`${API_BASE_URL}${attachment.download_url}`}
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50"
+                    download={attachment.filename}
+                  >
+                    Download {attachment.filename}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-slate-900">Messages</h2>
@@ -188,8 +272,31 @@ const TicketDetail: React.FC = () => {
             <p className="text-sm text-slate-500">No messages yet.</p>
           ) : messages.map((message) => (
             <article key={message.id} className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
-              <p className="text-xs font-semibold uppercase text-slate-500">{message.message_type}</p>
-              <p className="mt-2 min-w-0 whitespace-pre-wrap break-words text-sm text-slate-800 [overflow-wrap:anywhere]">{message.body}</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase text-slate-500">
+                  {message.is_ai_generated ? 'AI suggested reply' : message.message_type}
+                </p>
+                {message.is_ai_generated && message.is_draft && (
+                  <button
+                    type="button"
+                    onClick={() => acceptSuggestion(message)}
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                  >
+                    Accept suggestion
+                  </button>
+                )}
+              </div>
+              {message.is_ai_generated && message.is_draft ? (
+                <textarea
+                  aria-label="Edit AI suggested reply"
+                  value={suggestionDraft || message.body}
+                  onChange={(event) => setSuggestionDraft(event.target.value)}
+                  rows={5}
+                  className="mt-2 w-full rounded-lg border border-blue-200 p-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              ) : (
+                <p className="mt-2 min-w-0 whitespace-pre-wrap break-words text-sm text-slate-800 [overflow-wrap:anywhere]">{message.body}</p>
+              )}
             </article>
           ))}
         </section>
@@ -197,6 +304,14 @@ const TicketDetail: React.FC = () => {
           <label htmlFor="reply" className="text-lg font-semibold text-slate-900">
             Add final reply
           </label>
+          <button
+            type="button"
+            onClick={suggestReply}
+            disabled={isSuggesting}
+            className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+          >
+            {isSuggesting ? 'Generating suggestion...' : 'Suggest reply with AI'}
+          </button>
           <textarea
             id="reply"
             value={reply}

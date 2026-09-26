@@ -21,6 +21,7 @@ class Ticket(models.Model):
 
     ticket_number = models.CharField(max_length=20, unique=True)
     subject = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
     requester_email = models.EmailField()
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="open")
     category = models.CharField(max_length=12, choices=CATEGORY_CHOICES, default="general")
@@ -53,8 +54,40 @@ class TicketMessage(models.Model):
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="sent_messages")
     body = models.TextField()
     message_type = models.CharField(max_length=10, choices=MESSAGE_TYPE_CHOICES, default="customer")
+    is_ai_generated = models.BooleanField(default=False)
+    is_draft = models.BooleanField(default=False)
+    ai_log = models.ForeignKey(
+        "tickets.AILog",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Message {self.id} on {self.ticket.ticket_number}"
+
+
+class AILog(models.Model):
+    STATUS_CHOICES = [
+        ("started", "Started"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+    ]
+
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="ai_logs")
+    model = models.CharField(max_length=100)
+    operation = models.CharField(max_length=50)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="started")
+    sanitized_prompt = models.TextField(blank=True)
+    response_text = models.TextField(blank=True)
+    retrieved_document_ids = models.JSONField(default=list, blank=True)
+    token_usage = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.operation} for {self.ticket.ticket_number} ({self.status})"

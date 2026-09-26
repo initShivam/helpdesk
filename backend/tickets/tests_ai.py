@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -6,7 +7,10 @@ from rest_framework.test import APIClient
 from accounts.models import User
 
 from .ai import AIAnalysisError, analyze_ticket, enrich_ticket
-from .models import Ticket
+from .ai_service import build_prompt, sanitize_prompt
+from .models import AILog, Ticket, TicketMessage
+from .tasks import generate_ai_suggestion
+from knowledge_base.services import index_document
 
 
 class TicketAIAnalysisTests(TestCase):
@@ -127,3 +131,97 @@ class TicketAIAnalysisTests(TestCase):
         self.assertEqual(ticket.priority, "medium")
         self.assertIsNone(ticket.ai_summary)
         self.assertIsNone(ticket.ai_category_confidence)
+
+    def test_safety_filter_redacts_pii_and_profanity(self):
+        sanitized = sanitize_prompt("Email me at user@example.com or call +1 555-123-4567, shit.")
+
+        self.assertNotIn("user@example.com", sanitized)
+        self.assertNotIn("555-123-4567", sanitized)
+        self.assertNotIn("shit", sanitized.lower())
+
+    @patch("tickets.tasks.generate_with_gemini")
+    def test_generate_suggestion_retrieves_context_and_creates_draft(self, generate):
+        ticket = Ticket.objects.create(
+            ticket_number="AI-SUGGEST-001",
+            subject="How do I reset my password?",
+            requester_email="customer@example.com",
+        )
+        TicketMessage.objects.create(
+            ticket=ticket,
+            body="I cannot sign in and need a password reset.",
+            message_type="customer",
+        )
+        document = index_document(
+            title="Password reset",
+            content="Customers can reset a forgotten password from account security.",
+        )
+        generate.return_value = ("Use the account security page to reset your password.", {"totalTokenCount": 20})
+
+        log_id = generate_ai_suggestion.run(ticket.pk)
+
+        log = AILog.objects.get(pk=log_id)
+        draft = TicketMessage.objects.get(ticket=ticket, is_ai_generated=True)
+        self.assertEqual(log.status, "succeeded")
+        self.assertEqual(log.retrieved_document_ids, [document.pk])
+        self.assertTrue(draft.is_draft)
+        self.assertEqual(draft.body, generate.return_value[0])
+        generate.assert_called_once()
+
+    @patch("tickets.tasks.generate_with_gemini", side_effect=RuntimeError("provider down"))
+    def test_generate_suggestion_records_failure(self, generate):
+        ticket = Ticket.objects.create(
+            ticket_number="AI-SUGGEST-002",
+            subject="Need help",
+            requester_email="customer@example.com",
+        )
+
+        with self.assertRaises(RuntimeError):
+            generate_ai_suggestion.run(ticket.pk)
+
+        log = AILog.objects.get(ticket=ticket)
+        self.assertEqual(log.status, "failed")
+
+    def test_prompt_contains_ticket_and_retrieved_context(self):
+        ticket = Ticket(
+            subject="Refund status",
+        )
+        message = TicketMessage(body="Please check my refund.", message_type="customer")
+
+        prompt = build_prompt(ticket, [message], [])
+
+        self.assertIn("Refund status", prompt)
+        self.assertIn("Please check my refund.", prompt)
+
+    @patch("tickets.views.generate_ai_suggestion.delay", return_value=SimpleNamespace(id="task-1"))
+    def test_suggestion_endpoint_queues_task_and_accepts_draft(self, delay):
+        user = User.objects.create_user(username="reviewer", password="ReviewerPass123!", role="AGENT")
+        ticket = Ticket.objects.create(
+            ticket_number="AI-SUGGEST-003",
+            subject="Need a reply",
+            requester_email="customer@example.com",
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(f"/api/tickets/{ticket.pk}/suggest-reply/")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["task_id"], "task-1")
+        delay.assert_called_once_with(ticket.pk)
+
+        draft = TicketMessage.objects.create(
+            ticket=ticket,
+            body="Draft response",
+            message_type="agent",
+            is_ai_generated=True,
+            is_draft=True,
+        )
+        response = client.post(
+            f"/api/tickets/{ticket.pk}/accept-suggestion/",
+            {"message_id": draft.pk, "body": "Edited response"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        draft.refresh_from_db()
+        self.assertEqual(draft.body, "Edited response")
+        self.assertFalse(draft.is_ai_generated)
+        self.assertFalse(draft.is_draft)

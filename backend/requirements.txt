@@ -8,3 +8,5 @@ celery
 redis
 python-dotenv
 google-auth-oauthlib
+pypdf
+pgvector

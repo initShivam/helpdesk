@@ -1,7 +1,9 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useState, useContext } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import NavBar from './components/NavBar';
 import { AuthContext } from './context/AuthContext';
 import { Link } from 'react-router-dom';
+import { apiJson } from './api';
 
 interface Ticket {
   id: number;
@@ -16,48 +18,20 @@ interface Ticket {
 }
 
 const App: React.FC = () => {
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
   const auth = useContext(AuthContext);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-
-  const fetchTickets = () => {
-    setLoading(true);
-    setError(null);
-    fetch(`${API_BASE_URL}/api/tickets/`, {
-      credentials: 'include',
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`Failed to load tickets (HTTP ${res.status})`);
-        }
-        return res.json();
-      })
-      .then((data) => {
-        // DRF may return an array or paginated object { results: [...] }
-        if (Array.isArray(data)) {
-          setTickets(data);
-        } else if (data && Array.isArray(data.results)) {
-          setTickets(data.results);
-        } else {
-          setTickets([]);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch tickets:', err);
-        setError(err.message);
-      })
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    if (auth?.user) {
-      fetchTickets();
-    }
-  }, [auth?.user]);
+  const ticketsQuery = useQuery({
+    queryKey: ['tickets'],
+    queryFn: async () => {
+      const data = await apiJson<Ticket[] | { results: Ticket[] }>('/api/tickets/');
+      return Array.isArray(data) ? data : data.results;
+    },
+    enabled: Boolean(auth?.user),
+  });
+  const tickets = ticketsQuery.data ?? [];
+  const loading = ticketsQuery.isLoading;
+  const error = ticketsQuery.error instanceof Error ? ticketsQuery.error.message : null;
 
   const filteredTickets = tickets.filter((t) => {
     const matchesStatus = filterStatus === 'all' || t.status.toLowerCase() === filterStatus.toLowerCase();
@@ -112,7 +86,7 @@ const App: React.FC = () => {
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={fetchTickets}
+                onClick={() => void ticketsQuery.refetch()}
                 className="inline-flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer"
               >
                 <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,7 +166,7 @@ const App: React.FC = () => {
             <div className="p-6 text-center">
               <p className="text-sm text-red-600">{error}</p>
               <button
-                onClick={fetchTickets}
+                onClick={() => void ticketsQuery.refetch()}
                 className="mt-2 text-xs font-semibold text-blue-600 hover:underline cursor-pointer"
               >
                 Try again

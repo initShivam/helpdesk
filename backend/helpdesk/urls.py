@@ -9,4 +9,5 @@ urlpatterns = [
     path('api/', include('tickets.urls')),
     path('api/auth/', include('accounts.urls')),
     path('api/agents/', include('accounts.agent_urls')),
+    path('api/knowledge-base/', include('knowledge_base.urls')),
     path('admin/', admin.site.urls),]
