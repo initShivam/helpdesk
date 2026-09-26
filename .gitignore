@@ -27,6 +27,7 @@ var/
 *.log
 local_settings.py
 db.sqlite3
+backend/e2e.sqlite3
 media
 staticfiles
 
@@ -55,3 +56,5 @@ Thumbs.db
 # Local environment and frontend dependencies
 .env
 frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/

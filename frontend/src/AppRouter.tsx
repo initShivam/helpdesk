@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import App from './App';
 import PrivateRoute from './components/PrivateRoute';
 import TicketDetail from './pages/TicketDetail';
+import AdminAgents from './pages/AdminAgents';
 
 const AppRouter: React.FC = () => {
   return (
@@ -23,6 +24,14 @@ const AppRouter: React.FC = () => {
           element={
             <PrivateRoute>
               <TicketDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin/agents"
+          element={
+            <PrivateRoute>
+              <AdminAgents />
             </PrivateRoute>
           }
         />

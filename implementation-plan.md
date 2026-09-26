@@ -10,6 +10,10 @@
 - Write a `.env.example` that documents required environment variables (DB credentials, Django session secret, Gemini API key, Gmail OAuth client, etc.).
 - Add a custom `User` model that extends `AbstractUser` and run the initial migration.
  
+
+
+
+ 
 ## Phase 1 – Core Ticket Model & API
 
 - Design a `Ticket` model with fields for status, category, subject, description, creator, assignee and timestamps.
@@ -88,6 +92,8 @@
 Adjust the dates according to team size and sprint cadence.
 
 ---
+
+
 
 ### Deliverables per Phase
 

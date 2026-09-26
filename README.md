@@ -48,6 +48,50 @@ Foundation → Auth/RBAC → Ticket Management → AI Classification → KB/RAG 
 8. **Phase 7 – Dashboard & Analytics** – ticket view, AI metrics, optional Prometheus/Grafana.
 9. **Phase 8 – Production Hardening** – Helm charts, tracing, security, optional enterprise infra.
 
+## Authentication and Agent Administration
+
+Users sign in with their username or email using Django session authentication.
+Administrators can manage agent accounts from `/admin/agents` in the frontend.
+The page supports creating and deleting agents; the `/api/agents/` API is
+restricted to administrators and cannot create, modify, or delete admin accounts.
+
+API rate limiting is enabled only when `DJANGO_ENV=production`. Production
+limits are 100 requests/hour for anonymous clients, 1,000 requests/hour for
+authenticated users, and 10 login attempts/hour. Throttle counters use Redis;
+set `DJANGO_CACHE_URL` to the shared production Redis URL (it defaults to
+`CELERY_BROKER_URL`).
+
+## Playwright End-to-End Setup
+
+Install the browser test tooling and its Chromium browser from `frontend/`:
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+Run the configured Playwright command when end-to-end tests are added:
+
+```bash
+npm run e2e
+```
+
+Playwright starts the frontend at `http://127.0.0.1:5174` and a dedicated Django
+server at `http://127.0.0.1:8001`. The server uses a separate PostgreSQL 18 database
+`helpdesk_e2e` (configured via `E2E_POSTGRES_*` environment variables in `.env`),
+runs Django migrations before startup, and does not read the development PostgreSQL
+database configuration. E2E database details are set in `.env`:
+- `E2E_POSTGRES_DB=helpdesk_e2e` (database name)
+- `E2E_POSTGRES_HOST=localhost` (PostgreSQL host)
+- `E2E_POSTGRES_PORT=5433` (PostgreSQL port)
+- `E2E_POSTGRES_USER=postgres` (PostgreSQL user)
+- `E2E_POSTGRES_PASSWORD=admin` (PostgreSQL password)
+
+The `playwright.config.ts` loads these variables automatically. The database is
+isolated from development; each E2E test run uses a fresh schema. All generated
+Playwright artifacts and the E2E database are git-ignored. No end-to-end test
+cases are included yet.
+
 ---
 
 *This document captures the architectural decisions and roadmap. Further code will be added in subsequent phases.*

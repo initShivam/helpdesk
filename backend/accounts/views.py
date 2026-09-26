@@ -1,8 +1,10 @@
 from django.contrib.auth import authenticate, login, logout
+from django.conf import settings
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from rest_framework import response, status, views, viewsets
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import User
 from .permissions import IsAdmin
@@ -26,6 +28,8 @@ class LoginView(views.APIView):
 
     permission_classes = []
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle] if settings.IS_PRODUCTION else []
+    throttle_scope = "login"
 
     def post(self, request, *args, **kwargs):
         identifier = request.data.get("username") or request.data.get("email")
@@ -73,8 +77,6 @@ class LogoutView(views.APIView):
 class MeView(views.APIView):
     """Return the current authenticated user and ensure a CSRF cookie exists."""
 
-    authentication_classes = []
-
     def get(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return response.Response(
@@ -87,6 +89,12 @@ class MeView(views.APIView):
 class AgentViewSet(viewsets.ModelViewSet):
     """CRUD operations for user accounts, restricted to administrators."""
 
-    queryset = User.objects.all()
+    queryset = User.objects.filter(role=User.ROLE_AGENT)
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
+
+    def perform_create(self, serializer):
+        serializer.save(role=User.ROLE_AGENT)
+
+    def perform_update(self, serializer):
+        serializer.save(role=User.ROLE_AGENT)

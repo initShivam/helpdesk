@@ -16,6 +16,8 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'replace-this-with-a-secure-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
+DJANGO_ENV = os.getenv('DJANGO_ENV', 'development').strip().lower()
+IS_PRODUCTION = DJANGO_ENV == 'production'
 
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')
 
@@ -91,7 +93,18 @@ TEMPLATES = [
 WSGI_APPLICATION = 'helpdesk.wsgi.application'
 
 # Database – default to PostgreSQL, fallback to SQLite for quick dev
-if os.getenv('POSTGRES_DB'):
+if os.getenv('HELPDESK_E2E') == '1':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('E2E_POSTGRES_DB', 'helpdesk_e2e'),
+            'USER': os.getenv('E2E_POSTGRES_USER', os.getenv('POSTGRES_USER', 'postgres')),
+            'PASSWORD': os.getenv('E2E_POSTGRES_PASSWORD', os.getenv('POSTGRES_PASSWORD', 'postgres')),
+            'HOST': os.getenv('E2E_POSTGRES_HOST', os.getenv('POSTGRES_HOST', 'localhost')),
+            'PORT': os.getenv('E2E_POSTGRES_PORT', os.getenv('POSTGRES_PORT', '5432')),
+        }
+    }
+elif os.getenv('POSTGRES_DB'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -138,6 +151,28 @@ REST_FRAMEWORK = {
         'tickets.auth.SessionAuthenticationWith401',
     ],
 }
+
+if IS_PRODUCTION:
+    REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.ScopedRateThrottle',
+    ]
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+        'anon': '100/hour',
+        'user': '1000/hour',
+        'login': '10/hour',
+    }
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': os.getenv(
+                'DJANGO_CACHE_URL',
+                os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/1'),
+            ),
+            'KEY_PREFIX': 'helpdesk',
+        }
+    }
 
 # CORS – allow either hostname commonly used by the local Vite server.
 CORS_ALLOW_CREDENTIALS = True

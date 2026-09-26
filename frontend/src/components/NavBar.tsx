@@ -1,5 +1,5 @@
 import React, { useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 
 const NavBar: React.FC = () => {
@@ -47,6 +47,15 @@ const NavBar: React.FC = () => {
               </div>
 
               <div className="h-8 w-px bg-slate-200 hidden sm:block" />
+
+              {user.role === 'ADMIN' && (
+                <Link
+                  to="/admin/agents"
+                  className="text-xs font-medium text-slate-600 hover:text-blue-700"
+                >
+                  Manage agents
+                </Link>
+              )}
 
               <button
                 onClick={handleLogout}

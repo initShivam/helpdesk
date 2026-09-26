@@ -47,6 +47,11 @@ class AuthenticationAndUserManagementTests(TestCase):
         self.assertNotIn("access", response.data)
         self.assertNotIn("refresh", response.data)
 
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["email"], "admin@example.com")
+        self.assertEqual(response.data["role"], User.ROLE_ADMIN)
+
     def test_admin_can_create_user_with_login_ready_password(self):
         self.client.force_login(self.admin)
         response = self.client.post(
@@ -63,6 +68,57 @@ class AuthenticationAndUserManagementTests(TestCase):
         self.assertEqual(response.status_code, 201)
         user = User.objects.get(username="new-agent")
         self.assertTrue(user.check_password("AgentPass123!"))
+
+    def test_agent_management_cannot_create_or_delete_admins(self):
+        self.client.force_login(self.admin)
+        agent = User.objects.create_user(
+            username="existing-agent",
+            email="existing-agent@example.com",
+            password="AgentPass123!",
+            role=User.ROLE_AGENT,
+        )
+
+        response = self.client.get("/api/agents/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {user["id"] for user in response.data},
+            {agent.id},
+        )
+
+        response = self.client.post(
+            "/api/agents/",
+            {
+                "username": "attempted-admin",
+                "email": "attempted-admin@example.com",
+                "role": User.ROLE_ADMIN,
+                "password": "AgentPass123!",
+            },
+            format="json",
+            **self._csrf_headers(),
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            User.objects.get(username="attempted-admin").role,
+            User.ROLE_AGENT,
+        )
+
+        response = self.client.delete(
+            f"/api/agents/{self.admin.id}/",
+            **self._csrf_headers(),
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_agent_cannot_manage_agent_accounts(self):
+        agent = User.objects.create_user(
+            username="restricted-agent",
+            email="restricted-agent@example.com",
+            password="AgentPass123!",
+            role=User.ROLE_AGENT,
+        )
+        self.client.force_login(agent)
+
+        response = self.client.get("/api/agents/")
+        self.assertEqual(response.status_code, 403)
 
     def test_confidence_must_be_between_zero_and_one(self):
         self.client.force_login(self.admin)
