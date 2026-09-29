@@ -10,4 +10,6 @@ urlpatterns = [
     path('api/auth/', include('accounts.urls')),
     path('api/agents/', include('accounts.agent_urls')),
     path('api/knowledge-base/', include('knowledge_base.urls')),
-    path('admin/', admin.site.urls),]
+    path('', include('django_prometheus.urls')),
+    path('admin/', admin.site.urls),
+]

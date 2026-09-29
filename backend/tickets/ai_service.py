@@ -41,6 +41,13 @@ def build_prompt(ticket, messages: list, context: list[RetrievedChunk]) -> str:
     )
 
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(AISuggestionError)
+)
 def generate_with_gemini(prompt: str) -> tuple[str, dict]:
     api_key = getattr(settings, "GEMINI_API_KEY", "")
     if not api_key:
@@ -66,7 +73,11 @@ def generate_with_gemini(prompt: str) -> tuple[str, dict]:
     try:
         with request.urlopen(req, timeout=getattr(settings, "AI_SUGGESTION_TIMEOUT", 30)) as response:
             data = json.loads(response.read().decode("utf-8"))
-    except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+    except error.HTTPError as exc:
+        if exc.code == 429:
+            raise AISuggestionError("Rate limit exceeded.") from exc
+        raise AISuggestionError("Gemini request failed.") from exc
+    except (error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise AISuggestionError("Gemini request failed.") from exc
 
     try:

@@ -21,6 +21,13 @@ def _local_embedding(text: str, dimensions: int = 768) -> list[float]:
     return [round(value / norm, 8) for value in vector]
 
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(EmbeddingError)
+)
 def embed_text(text: str) -> tuple[list[float], str]:
     api_key = getattr(settings, "GEMINI_API_KEY", "")
     model = getattr(settings, "GEMINI_EMBEDDING_MODEL", "text-embedding-004")
@@ -45,7 +52,11 @@ def embed_text(text: str) -> tuple[list[float], str]:
         if not values:
             raise ValueError("empty embedding")
         return [float(value) for value in values], model
-    except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+    except error.HTTPError as exc:
+        if exc.code == 429:
+            raise EmbeddingError("Rate limit exceeded.") from exc
+        raise EmbeddingError("Embedding provider failed.") from exc
+    except (error.URLError, TimeoutError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise EmbeddingError("Embedding provider failed.") from exc
 
 
