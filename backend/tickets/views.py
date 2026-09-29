@@ -7,12 +7,14 @@ from email_ingestion.models import EmailAttachment
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import NotAuthenticated
-from .models import Ticket, TicketMessage
+from datetime import timedelta
+from django.utils import timezone
+from rest_framework.views import APIView
+from .models import Ticket, TicketMessage, AILog
 from .serializers import TicketSerializer, TicketMessageSerializer
 from .auth import SessionAuthenticationWith401
 from .ai import enrich_ticket
-from .models import AILog
-from .tasks import generate_ai_suggestion
+from .tasks import generate_ai_suggestion, classify_ticket, summarize_ticket
 
 class TicketPermission(permissions.BasePermission):
     """Custom permission for TicketViewSet.
@@ -69,6 +71,18 @@ class TicketViewSet(viewsets.ModelViewSet):
     def suggest_reply(self, request, pk=None):
         ticket = self.get_object()
         task = generate_ai_suggestion.delay(ticket.pk)
+        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"], url_path="classify")
+    def classify(self, request, pk=None):
+        ticket = self.get_object()
+        task = classify_ticket.delay(ticket.pk)
+        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"], url_path="summarize")
+    def summarize(self, request, pk=None):
+        ticket = self.get_object()
+        task = summarize_ticket.delay(ticket.pk)
         return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["get"], url_path="suggestion-status")
@@ -138,3 +152,131 @@ class TicketMessageViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         ticket_pk = self.kwargs.get("ticket_pk")
         serializer.save(ticket_id=ticket_pk)
+
+
+class AnalyticsPermission(permissions.BasePermission):
+    """Permission for Analytics endpoints.
+    * Unauthenticated -> 401.
+    * Agents and Admins can view analytics.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            raise NotAuthenticated("Authentication credentials were not provided.")
+        role = getattr(request.user, "role", "")
+        return role in ("ADMIN", "AGENT") or request.user.is_staff
+
+
+class AnalyticsOverviewView(APIView):
+    """Provides key operational and AI metrics for the analytics dashboard."""
+
+    permission_classes = [AnalyticsPermission]
+    authentication_classes = [SessionAuthenticationWith401]
+
+    def get(self, request):
+        now = timezone.now()
+        try:
+            days = int(request.query_params.get("days", 14))
+            days = max(1, min(days, 90))
+        except (ValueError, TypeError):
+            days = 14
+
+        # 1. Total & Status Counts
+        total_tickets = Ticket.objects.count()
+        open_tickets = Ticket.objects.filter(status="open").count()
+        resolved_tickets = Ticket.objects.filter(status="resolved").count()
+        closed_tickets = Ticket.objects.filter(status="closed").count()
+
+        # 2. Number of tickets per day
+        start_date = (now - timedelta(days=days - 1)).date()
+        daily_counts = {}
+        for d in range(days):
+            day_str = (start_date + timedelta(days=d)).isoformat()
+            daily_counts[day_str] = 0
+
+        window_start = timezone.make_aware(
+            timezone.datetime.combine(start_date, timezone.datetime.min.time())
+        )
+        recent_tickets = Ticket.objects.filter(created_at__gte=window_start).values_list("created_at", flat=True)
+        for created_dt in recent_tickets:
+            day_key = created_dt.date().isoformat()
+            if day_key in daily_counts:
+                daily_counts[day_key] += 1
+
+        tickets_per_day = [{"date": k, "count": v} for k, v in daily_counts.items()]
+
+        # 3. Average first-reply time
+        reply_times = []
+        tickets_with_messages = Ticket.objects.all().prefetch_related("messages")
+        for ticket in tickets_with_messages:
+            first_reply = (
+                ticket.messages.filter(message_type="agent", is_draft=False)
+                .order_by("created_at")
+                .first()
+            )
+            if first_reply and first_reply.created_at >= ticket.created_at:
+                diff = (first_reply.created_at - ticket.created_at).total_seconds()
+                reply_times.append(diff)
+
+        avg_reply_seconds = round(sum(reply_times) / len(reply_times), 1) if reply_times else 0.0
+        avg_reply_minutes = round(avg_reply_seconds / 60.0, 1)
+
+        def format_duration(seconds: float) -> str:
+            if seconds <= 0:
+                return "N/A"
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            if hours > 0:
+                return f"{hours}h {minutes}m" if minutes > 0 else f"{hours}h"
+            return f"{max(1, minutes)}m"
+
+        # 4. Percentage of AI suggestions that were accepted
+        succeeded_suggestions = AILog.objects.filter(operation="suggest_reply", status="succeeded")
+        total_suggestions = succeeded_suggestions.count()
+        accepted_suggestions = TicketMessage.objects.filter(
+            ai_log__operation="suggest_reply",
+            is_ai_generated=False,
+            is_draft=False,
+        ).count()
+        acceptance_rate = (
+            round((accepted_suggestions / total_suggestions) * 100.0, 1)
+            if total_suggestions > 0
+            else 0.0
+        )
+        pending_suggestions = TicketMessage.objects.filter(
+            ai_log__operation="suggest_reply",
+            is_draft=True,
+        ).count()
+
+        # 5. Category breakdown
+        category_counts = [
+            {"category": "general", "label": "General Question", "count": Ticket.objects.filter(category="general").count()},
+            {"category": "technical", "label": "Technical Question", "count": Ticket.objects.filter(category="technical").count()},
+            {"category": "refund", "label": "Refund Request", "count": Ticket.objects.filter(category="refund").count()},
+        ]
+
+        # 6. Priority breakdown
+        priority_counts = [
+            {"priority": "high", "count": Ticket.objects.filter(priority="high").count()},
+            {"priority": "medium", "count": Ticket.objects.filter(priority="medium").count()},
+            {"priority": "low", "count": Ticket.objects.filter(priority="low").count()},
+        ]
+
+        return Response({
+            "total_tickets": total_tickets,
+            "open_tickets": open_tickets,
+            "resolved_tickets": resolved_tickets,
+            "closed_tickets": closed_tickets,
+            "average_first_reply_time_seconds": avg_reply_seconds,
+            "average_first_reply_time_minutes": avg_reply_minutes,
+            "average_first_reply_time_formatted": format_duration(avg_reply_seconds),
+            "ai_suggestions": {
+                "total": total_suggestions,
+                "accepted": accepted_suggestions,
+                "pending": pending_suggestions,
+                "acceptance_rate": acceptance_rate,
+            },
+            "tickets_per_day": tickets_per_day,
+            "categories": category_counts,
+            "priorities": priority_counts,
+        })

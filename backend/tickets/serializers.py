@@ -20,6 +20,8 @@ class TicketSerializer(serializers.ModelSerializer):
     * All model fields are exposed (including AI‑related ones) for future use.
     """
 
+    classification = serializers.CharField(source="category", required=False)
+
     class Meta:
         model = Ticket
         fields = [
@@ -30,6 +32,7 @@ class TicketSerializer(serializers.ModelSerializer):
             "requester_email",
             "status",
             "category",
+            "classification",
             "priority",
             "ai_summary",
             "ai_category_confidence",

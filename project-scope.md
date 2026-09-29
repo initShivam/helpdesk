@@ -49,12 +49,10 @@ The frontend provides:
 
 ## Scope boundaries
 
-The following are not part of the completed Phases 0-3:
+The following are not part of the completed Phases 0-4:
 
-- Classification and summary automation as separate Phase 4 workflows.
-- Analytics dashboard and operational metrics.
-- Production monitoring, audit logs, backup drills, and deployment automation.
-- Kubernetes or Helm deployment.
+- Production monitoring, audit logs, backup drills, and deployment automation (Phase 5).
+- Kubernetes or Helm deployment (Phase 5).
 
 ## Product decisions still required
 

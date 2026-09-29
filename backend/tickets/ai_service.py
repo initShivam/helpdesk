@@ -76,3 +76,69 @@ def generate_with_gemini(prompt: str) -> tuple[str, dict]:
     if not text:
         raise AISuggestionError("Gemini returned an empty suggestion.")
     return text, data.get("usageMetadata", {})
+
+
+def build_classification_prompt(ticket, messages: list | None = None) -> str:
+    """Build a few-shot prompt to classify a ticket into general, technical, or refund."""
+    conversation_body = ""
+    if messages:
+        conversation_body = "\n".join(f"{m.message_type}: {m.body}" for m in messages)
+    description = ticket.description or ""
+    ticket_content = f"Ticket Subject: {ticket.subject}\nTicket Description: {description}"
+    if conversation_body:
+        ticket_content += f"\nConversation History:\n{conversation_body}"
+
+    prompt = (
+        "You are an expert customer support ticket classifier.\n"
+        "Classify the customer support ticket into exactly ONE of the following categories:\n"
+        "- general\n"
+        "- technical\n"
+        "- refund\n\n"
+        "Category guidelines:\n"
+        "- general: General inquiries, greetings, product questions, business hours, account policies, feedback.\n"
+        "- technical: Technical problems, software errors, login failures, broken features, crashes, outages, bugs.\n"
+        "- refund: Payment issues, billing discrepancies, refund requests, unwanted charges, cancellation refunds.\n\n"
+        "Few-shot examples:\n\n"
+        "Ticket Subject: Office hours inquiry\n"
+        "Ticket Description: When are you open on Sundays and what is the address?\n"
+        "Category: general\n\n"
+        "Ticket Subject: Server connection error 502\n"
+        "Ticket Description: The dashboard is throwing a 502 Bad Gateway whenever I log in.\n"
+        "Category: technical\n\n"
+        "Ticket Subject: Cancel plan and request money back\n"
+        "Ticket Description: I was charged accidentally for an annual subscription and need a refund.\n"
+        "Category: refund\n\n"
+        "Now classify the following ticket:\n"
+        f"{ticket_content}\n\n"
+        "Respond with ONLY the category name: general, technical, or refund."
+    )
+    return sanitize_prompt(prompt)
+
+
+def parse_classification_response(raw_text: str) -> str:
+    """Parse Gemini's raw output and normalize to a valid category choice."""
+    text = raw_text.strip().lower()
+    for cat in ("technical", "refund", "general"):
+        if cat in text:
+            return cat
+    return "general"
+
+
+def build_summary_prompt(ticket, messages: list | None = None) -> str:
+    """Build a prompt to generate a concise summary of the ticket and conversation."""
+    conversation_body = ""
+    if messages:
+        conversation_body = "\n".join(f"{m.message_type}: {m.body}" for m in messages)
+    description = ticket.description or ""
+    ticket_content = f"Ticket Subject: {ticket.subject}\nTicket Description: {description}"
+    if conversation_body:
+        ticket_content += f"\nConversation History:\n{conversation_body}"
+
+    prompt = (
+        "You are a professional customer support assistant. Provide a concise, clear summary "
+        "of the following customer support ticket and its conversation in 1 to 2 sentences. "
+        "Highlight the customer's core issue and the current situation.\n\n"
+        f"{ticket_content}\n\n"
+        "Summary:"
+    )
+    return sanitize_prompt(prompt)

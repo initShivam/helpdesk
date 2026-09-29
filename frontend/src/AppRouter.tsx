@@ -5,6 +5,7 @@ import App from './App';
 import PrivateRoute from './components/PrivateRoute';
 import TicketDetail from './pages/TicketDetail';
 import AdminAgents from './pages/AdminAgents';
+import Dashboard from './pages/Dashboard';
 
 const AppRouter: React.FC = () => {
   return (
@@ -16,6 +17,14 @@ const AppRouter: React.FC = () => {
           element={
             <PrivateRoute>
               <App />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <PrivateRoute>
+              <Dashboard />
             </PrivateRoute>
           }
         />

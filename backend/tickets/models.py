@@ -44,6 +44,14 @@ class Ticket(models.Model):
     def __str__(self):
         return f"{self.ticket_number} - {self.subject}"
 
+    @property
+    def classification(self) -> str:
+        return self.category
+
+    @classification.setter
+    def classification(self, value: str) -> None:
+        self.category = value
+
 class TicketMessage(models.Model):
     MESSAGE_TYPE_CHOICES = [
         ("customer", "Customer"),

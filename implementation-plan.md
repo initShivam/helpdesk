@@ -72,6 +72,13 @@ and enables the pgvector store.
 
 ## Phase 4 - Classification, Summaries & Dashboard
 
+**Status:** Implemented in the current branch. Ticket classification and summarization
+Celery tasks with few-shot Gemini prompting, operational analytics overview endpoint
+(`/api/analytics/overview`), Recharts analytics dashboard with daily volume trends,
+average first-reply time, and AI suggestion adoption metrics, ticket list filtering by
+status/category, creation date ordering, ticket detail AI classification/summarization
+actions, and comprehensive backend/Playwright E2E test suites are complete.
+
 - Add a classification field to `Ticket` (General, Technical, Refund).
 - Implement a Celery task `classify_ticket(ticket_id)` that prompts Gemini with a few‑shot example and stores the predicted category.
 - Implement a summarization task `summarize_ticket(ticket_id)` that creates a concise AI‑generated summary message.

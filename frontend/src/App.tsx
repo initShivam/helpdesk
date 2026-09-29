@@ -1,26 +1,18 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import NavBar from './components/NavBar';
 import { AuthContext } from './context/AuthContext';
 import { Link } from 'react-router-dom';
 import { apiJson } from './api';
-
-interface Ticket {
-  id: number;
-  ticket_number: string;
-  subject: string;
-  requester_email?: string;
-  status: string;
-  priority: string;
-  category?: string;
-  created_at: string;
-  updated_at?: string;
-}
+import { Ticket } from './types';
 
 const App: React.FC = () => {
   const auth = useContext(AuthContext);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+
   const ticketsQuery = useQuery({
     queryKey: ['tickets'],
     queryFn: async () => {
@@ -29,19 +21,35 @@ const App: React.FC = () => {
     },
     enabled: Boolean(auth?.user),
   });
+
   const tickets = ticketsQuery.data ?? [];
   const loading = ticketsQuery.isLoading;
   const error = ticketsQuery.error instanceof Error ? ticketsQuery.error.message : null;
 
-  const filteredTickets = tickets.filter((t) => {
-    const matchesStatus = filterStatus === 'all' || t.status.toLowerCase() === filterStatus.toLowerCase();
-    const matchesSearch =
-      searchQuery === '' ||
-      t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.requester_email && t.requester_email.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesStatus && matchesSearch;
-  });
+  const filteredTickets = useMemo(() => {
+    return tickets
+      .filter((t) => {
+        const matchesStatus =
+          filterStatus === 'all' || t.status.toLowerCase() === filterStatus.toLowerCase();
+
+        const cat = (t.category || t.classification || '').toLowerCase();
+        const matchesCategory =
+          filterCategory === 'all' || cat === filterCategory.toLowerCase();
+
+        const matchesSearch =
+          searchQuery === '' ||
+          t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          t.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (t.requester_email && t.requester_email.toLowerCase().includes(searchQuery.toLowerCase()));
+
+        return matchesStatus && matchesCategory && matchesSearch;
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.created_at).getTime();
+        const timeB = new Date(b.created_at).getTime();
+        return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+      });
+  }, [tickets, filterStatus, filterCategory, searchQuery, sortOrder]);
 
   const getPriorityBadge = (priority: string) => {
     switch (priority?.toLowerCase()) {
@@ -68,6 +76,34 @@ const App: React.FC = () => {
     }
   };
 
+  const getCategoryBadge = (category?: string) => {
+    switch (category?.toLowerCase()) {
+      case 'technical':
+        return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'refund':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'general':
+      default:
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  };
+
+  const formatCategoryName = (category?: string) => {
+    switch (category?.toLowerCase()) {
+      case 'technical':
+        return 'Technical';
+      case 'refund':
+        return 'Refund';
+      case 'general':
+      default:
+        return 'General';
+    }
+  };
+
+  const toggleSort = () => {
+    setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar />
@@ -85,6 +121,15 @@ const App: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              <Link
+                to="/dashboard"
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                View Analytics Dashboard
+              </Link>
               <button
                 onClick={() => void ticketsQuery.refetch()}
                 className="inline-flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer"
@@ -124,40 +169,91 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Filter and Search Bar */}
+        {/* Filter, Search, and Sort Bar */}
         <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden mb-6">
-          <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-            {/* Search */}
-            <div className="relative flex-1 max-w-md">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+          <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+              {/* Search */}
+              <div className="relative flex-1 max-w-md">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search ticket #, subject, or email..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
+                />
               </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search ticket #, subject, or email..."
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
-              />
+
+              {/* Sort Order Control */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-500">Sort by date:</span>
+                <button
+                  type="button"
+                  onClick={toggleSort}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition cursor-pointer"
+                  title="Click to toggle creation date sort order"
+                >
+                  <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {sortOrder === 'desc' ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    )}
+                  </svg>
+                  {sortOrder === 'desc' ? 'Newest first' : 'Oldest first'}
+                </button>
+              </div>
             </div>
 
-            {/* Filter by status */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-              {(['all', 'open', 'resolved', 'closed'] as const).map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer capitalize ${
-                    filterStatus === st
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+            {/* Filter Rows: Status and Category */}
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-100">
+              {/* Filter by status */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+                <span className="text-xs font-medium text-slate-400 mr-1">Status:</span>
+                {(['all', 'open', 'resolved', 'closed'] as const).map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setFilterStatus(st)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer capitalize ${
+                      filterStatus === st
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+
+              {/* Filter by category */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+                <span className="text-xs font-medium text-slate-400 mr-1">Category:</span>
+                {(
+                  [
+                    { id: 'all', label: 'All Categories' },
+                    { id: 'general', label: 'General' },
+                    { id: 'technical', label: 'Technical' },
+                    { id: 'refund', label: 'Refund' },
+                  ] as const
+                ).map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setFilterCategory(cat.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                      filterCategory === cat.id
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -187,8 +283,8 @@ const App: React.FC = () => {
               </svg>
               <p className="text-base font-medium text-slate-700">No tickets found</p>
               <p className="text-xs text-slate-400 mt-1">
-                {searchQuery || filterStatus !== 'all'
-                  ? 'Try adjusting your search query or status filter.'
+                {searchQuery || filterStatus !== 'all' || filterCategory !== 'all'
+                  ? 'Try adjusting your search query, status, or category filter.'
                   : 'New customer support tickets will appear here.'}
               </p>
             </div>
@@ -204,13 +300,29 @@ const App: React.FC = () => {
                       Subject
                     </th>
                     <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Category
+                    </th>
+                    <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                       Status
                     </th>
                     <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                       Priority
                     </th>
-                    <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Created
+                    <th
+                      scope="col"
+                      onClick={toggleSort}
+                      className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-800 select-none"
+                    >
+                      <div className="inline-flex items-center gap-1">
+                        <span>Created</span>
+                        <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          {sortOrder === 'desc' ? (
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          ) : (
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                          )}
+                        </svg>
+                      </div>
                     </th>
                   </tr>
                 </thead>
@@ -227,6 +339,11 @@ const App: React.FC = () => {
                         {t.requester_email && (
                           <div className="text-xs text-slate-400 mt-0.5">{t.requester_email}</div>
                         )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getCategoryBadge(t.category || t.classification)}`}>
+                          {formatCategoryName(t.category || t.classification)}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize ${getStatusBadge(t.status)}`}>

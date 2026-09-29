@@ -42,6 +42,8 @@ const TicketDetail: React.FC = () => {
   const [reply, setReply] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isClassifying, setIsClassifying] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [suggestionDraft, setSuggestionDraft] = useState('');
 
@@ -188,6 +190,53 @@ const TicketDetail: React.FC = () => {
     }
   };
 
+  const classifyTicket = async () => {
+    if (!id) return;
+    setActionError(null);
+    setIsClassifying(true);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/classify/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': csrfToken },
+      });
+      if (!response.ok) {
+        throw new Error('Unable to trigger AI classification.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+    } catch (reason: unknown) {
+      setActionError(reason instanceof Error ? reason.message : 'AI classification failed.');
+    } finally {
+      setIsClassifying(false);
+    }
+  };
+
+  const summarizeTicket = async () => {
+    if (!id) return;
+    setActionError(null);
+    setIsSummarizing(true);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/summarize/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': csrfToken },
+      });
+      if (!response.ok) {
+        throw new Error('Unable to trigger AI summarization.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+      await queryClient.invalidateQueries({ queryKey: ['ticket-messages', id] });
+    } catch (reason: unknown) {
+      setActionError(reason instanceof Error ? reason.message : 'AI summarization failed.');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   if (error) {
     return (
       <main className="p-8 text-red-600">
@@ -211,8 +260,8 @@ const TicketDetail: React.FC = () => {
           <p className="mt-2 text-sm text-slate-500">{ticket.requester_email}</p>
           <div className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
             <span>Status: <strong>{ticket.status}</strong></span>
-            <span>Category: <strong>{ticket.category}</strong></span>
-            <span>Priority: <strong>{ticket.priority}</strong></span>
+            <span>Category: <strong className="capitalize">{ticket.category}</strong></span>
+            <span>Priority: <strong className="capitalize">{ticket.priority}</strong></span>
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
             {ticket.status === 'open' && (
@@ -220,7 +269,7 @@ const TicketDetail: React.FC = () => {
                 type="button"
                 onClick={() => updateTicket('resolved')}
                 disabled={isSaving}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
               >
                 {isSaving ? 'Saving...' : 'Resolve ticket'}
               </button>
@@ -230,11 +279,35 @@ const TicketDetail: React.FC = () => {
                 type="button"
                 onClick={() => updateTicket('open')}
                 disabled={isSaving}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
               >
                 Reopen ticket
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={classifyTicket}
+              disabled={isClassifying}
+              className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 cursor-pointer inline-flex items-center gap-2"
+            >
+              <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              {isClassifying ? 'Classifying...' : 'Classify with AI'}
+            </button>
+
+            <button
+              type="button"
+              onClick={summarizeTicket}
+              disabled={isSummarizing}
+              className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-100 disabled:opacity-50 cursor-pointer inline-flex items-center gap-2"
+            >
+              <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {isSummarizing ? 'Summarizing...' : 'Summarize with AI'}
+            </button>
           </div>
           {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
           {suggestionError && <p className="mt-3 text-sm text-red-600">{suggestionError}</p>}
