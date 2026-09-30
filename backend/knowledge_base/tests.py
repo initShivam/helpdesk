@@ -1,13 +1,22 @@
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
+from rest_framework.exceptions import ValidationError
 
 from unittest.mock import patch
 
 from .embeddings import cosine_similarity, embed_text
 from .retrieval import retrieve
-from .services import index_document
+from .services import index_document, index_uploaded_file
 
 
+@override_settings(GEMINI_API_KEY='')
 class KnowledgeBaseTests(TestCase):
+    def test_uploaded_documents_reject_unsupported_or_oversized_files(self):
+        with self.assertRaises(ValidationError):
+            index_uploaded_file(SimpleUploadedFile("payload.exe", b"not allowed"))
+        with self.assertRaises(ValidationError):
+            index_uploaded_file(SimpleUploadedFile("large.txt", b"x" * (10 * 1024 * 1024 + 1)))
+
     def test_indexes_and_retrieves_relevant_chunks(self):
         index_document(
             title="Password reset guide",

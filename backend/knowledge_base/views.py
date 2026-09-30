@@ -25,9 +25,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if upload:
             document = index_uploaded_file(upload)
             return Response(self.get_serializer(document).data, status=status.HTTP_201_CREATED)
+        title = request.data.get("title", "")
+        content = request.data.get("content", "")
+        source = request.data.get("source", "")
+        if not isinstance(title, str) or not title.strip() or len(title) > 255:
+            return Response({"title": "A title of 1 to 255 characters is required."}, status=400)
+        if not isinstance(content, str) or not content.strip() or len(content) > 100_000:
+            return Response({"content": "Content must contain 1 to 100,000 characters."}, status=400)
+        if not isinstance(source, str) or len(source) > 255:
+            return Response({"source": "Source must be at most 255 characters."}, status=400)
         document = index_document(
-            title=request.data.get("title", ""),
-            content=request.data.get("content", ""),
-            source=request.data.get("source", ""),
+            title=title.strip(),
+            content=content,
+            source=source,
         )
         return Response(self.get_serializer(document).data, status=status.HTTP_201_CREATED)

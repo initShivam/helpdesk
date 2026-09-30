@@ -8,6 +8,7 @@ from email_ingestion.models import EmailAttachment
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import NotAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from datetime import timedelta
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -21,12 +22,18 @@ from .tasks import generate_ai_suggestion, classify_ticket, summarize_ticket
 def _enqueue_ai_task(task, ticket_id):
     """Queue AI work, surfacing task failures when local eager mode is enabled."""
     result = task.delay(ticket_id)
-    if settings.CELERY_TASK_ALWAYS_EAGER and result.failed():
+    if settings.CELERY_TASK_ALWAYS_EAGER and getattr(result, "failed", lambda: False)():
         return Response(
             {"detail": str(result.result) or "AI task failed. Check the server configuration."},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     return Response({"task_id": result.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class AIActionRateThrottle(ScopedRateThrottle):
+    """Apply the configured AI scope only to AI-producing viewset actions."""
+
+    scope_attr = 'ai_throttle_scope'
 
 
 class TicketPermission(permissions.BasePermission):
@@ -76,21 +83,42 @@ class TicketViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
 
+    @property
+    def ai_throttle_scope(self):
+        return 'ai' if getattr(self, 'action', None) in {
+            'suggest_reply', 'classify', 'summarize'
+        } else None
+
     def perform_create(self, serializer):
         ticket = serializer.save()
         enrich_ticket(ticket, ticket.description or '')
 
-    @action(detail=True, methods=["post"], url_path="suggest-reply")
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="suggest-reply",
+        throttle_classes=[AIActionRateThrottle],
+    )
     def suggest_reply(self, request, pk=None):
         ticket = self.get_object()
         return _enqueue_ai_task(generate_ai_suggestion, ticket.pk)
 
-    @action(detail=True, methods=["post"], url_path="classify")
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="classify",
+        throttle_classes=[AIActionRateThrottle],
+    )
     def classify(self, request, pk=None):
         ticket = self.get_object()
         return _enqueue_ai_task(classify_ticket, ticket.pk)
 
-    @action(detail=True, methods=["post"], url_path="summarize")
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="summarize",
+        throttle_classes=[AIActionRateThrottle],
+    )
     def summarize(self, request, pk=None):
         ticket = self.get_object()
         return _enqueue_ai_task(summarize_ticket, ticket.pk)

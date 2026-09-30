@@ -1,7 +1,5 @@
-# Multi-stage Frontend Dockerfile
-
-# Stage 1: Development and Build
-FROM node:20-alpine AS dev
+# Multi-stage frontend: Vite for local development, Nginx for production.
+FROM node:24-alpine AS dev
 WORKDIR /app
 
 # Install dependencies
@@ -17,7 +15,7 @@ EXPOSE 5173
 # Default dev command
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
-# Build production static files
+FROM dev AS build
 RUN npm run build
 
 
@@ -27,8 +25,9 @@ FROM nginx:alpine AS prod
 # Remove default nginx static assets
 RUN rm -rf /usr/share/nginx/html/*
 
-# Copy built assets from dev/build stage
-COPY --from=dev /app/dist /usr/share/nginx/html
+# Copy production assets and the API/SPA reverse-proxy configuration.
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose HTTP port
 EXPOSE 80

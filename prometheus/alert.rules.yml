@@ -1,0 +1,11 @@
+groups:
+  - name: helpdesk-availability
+    rules:
+      - alert: HelpdeskScrapeTargetDown
+        expr: up{job=~"django|celery"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Helpdesk {{ $labels.job }} metrics target is unavailable"
+          description: "Prometheus has been unable to scrape {{ $labels.instance }} for two minutes."

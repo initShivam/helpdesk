@@ -58,3 +58,8 @@ Thumbs.db
 frontend/node_modules/
 frontend/test-results/
 frontend/playwright-report/
+/backups/
+/restore-drill/
+*.dump
+*.media.tar.gz
+*.sha256

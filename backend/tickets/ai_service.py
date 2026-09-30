@@ -16,6 +16,10 @@ class AIConfigurationError(AISuggestionError):
     """Raised for AI setup problems that retries cannot resolve."""
 
 
+class AIRetryableError(AISuggestionError):
+    """Raised for transient provider failures that can succeed on retry."""
+
+
 _PII_PATTERNS = (
     (re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I), "[email redacted]"),
     (re.compile(r"\b(?:\+?\d[\d\s().-]{7,}\d)\b"), "[phone redacted]"),
@@ -54,9 +58,9 @@ def generate_with_gemini(prompt: str) -> tuple[str, dict]:
 
 
 @retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(AISuggestionError),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type(AIRetryableError),
     reraise=True,
 )
 def _generate_with_gemini(prompt: str, api_key: str) -> tuple[str, dict]:
@@ -81,11 +85,13 @@ def _generate_with_gemini(prompt: str, api_key: str) -> tuple[str, dict]:
         with request.urlopen(req, timeout=getattr(settings, "AI_SUGGESTION_TIMEOUT", 30)) as response:
             data = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
-        if exc.code == 429:
-            raise AISuggestionError("Rate limit exceeded.") from exc
-        raise AISuggestionError("Gemini request failed.") from exc
+        if exc.code == 429 or exc.code >= 500:
+            raise AIRetryableError(f"Gemini temporarily unavailable (HTTP {exc.code}).") from exc
+        raise AIConfigurationError(
+            f"Gemini rejected the request (HTTP {exc.code}); check the API key, model, and quota."
+        ) from exc
     except (error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise AISuggestionError("Gemini request failed.") from exc
+        raise AIRetryableError("Gemini request failed temporarily.") from exc
 
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"].strip()

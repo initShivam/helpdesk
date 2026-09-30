@@ -1,7 +1,9 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import User
+from tickets.models import Ticket, TicketMessage
+
+from .models import AuditLog, User
 
 
 class AuthenticationAndUserManagementTests(TestCase):
@@ -94,6 +96,61 @@ class AuthenticationAndUserManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.get("/api/auth/me/").status_code, 401)
+
+    def test_login_and_logout_are_audited_at_the_auth_routes(self):
+        csrf_token = self.client.get("/api/auth/csrf/").data["csrfToken"]
+        self.client.post(
+            "/api/auth/login/",
+            {"username": "admin", "password": "adminpass"},
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        self.assertTrue(AuditLog.objects.filter(user=self.admin, action="Login").exists())
+
+        csrf_token = self.client.get("/api/auth/csrf/").data["csrfToken"]
+        self.client.post(
+            "/api/auth/logout/",
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        self.assertTrue(AuditLog.objects.filter(user=self.admin, action="Logout").exists())
+
+    def test_ticket_status_and_ai_acceptance_are_audited(self):
+        self.client.force_login(self.admin)
+        ticket = Ticket.objects.create(
+            ticket_number="AUDIT-001",
+            subject="Audit events",
+            requester_email="customer@example.com",
+        )
+        csrf_token = self.client.get("/api/auth/csrf/").data["csrfToken"]
+        response = self.client.patch(
+            f"/api/tickets/{ticket.pk}/",
+            {"status": "resolved"},
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        draft = TicketMessage.objects.create(
+            ticket=ticket,
+            body="Suggested response",
+            message_type="agent",
+            is_ai_generated=True,
+            is_draft=True,
+        )
+        response = self.client.post(
+            f"/api/tickets/{ticket.pk}/accept-suggestion/",
+            {"message_id": draft.pk, "body": draft.body},
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            AuditLog.objects.filter(user=self.admin, action="Ticket Status Change").exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(user=self.admin, action="AI Suggestion Accepted").exists()
+        )
 
     def test_admin_can_create_user_with_login_ready_password(self):
         self.client.force_login(self.admin)

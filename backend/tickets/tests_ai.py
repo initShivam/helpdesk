@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from accounts.models import User
@@ -21,6 +21,7 @@ from .tasks import classify_ticket, generate_ai_suggestion, summarize_ticket
 from knowledge_base.services import index_document
 
 
+@override_settings(GEMINI_API_KEY='')
 class TicketAIAnalysisTests(TestCase):
     def test_classifies_technical_ticket(self):
         analysis = analyze_ticket(

@@ -10,6 +10,10 @@ class EmbeddingError(Exception):
     """Raised when an embedding provider cannot return a vector."""
 
 
+class EmbeddingRetryableError(EmbeddingError):
+    """Raised for temporary embedding provider failures."""
+
+
 def _local_embedding(text: str, dimensions: int = 768) -> list[float]:
     """Stable offline fallback used by tests and development without an API key."""
     vector = [0.0] * dimensions
@@ -24,9 +28,10 @@ def _local_embedding(text: str, dimensions: int = 768) -> list[float]:
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 @retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(EmbeddingError)
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type(EmbeddingRetryableError),
+    reraise=True,
 )
 def embed_text(text: str) -> tuple[list[float], str]:
     api_key = getattr(settings, "GEMINI_API_KEY", "")
@@ -53,11 +58,15 @@ def embed_text(text: str) -> tuple[list[float], str]:
             raise ValueError("empty embedding")
         return [float(value) for value in values], model
     except error.HTTPError as exc:
-        if exc.code == 429:
-            raise EmbeddingError("Rate limit exceeded.") from exc
-        raise EmbeddingError("Embedding provider failed.") from exc
+        if exc.code == 429 or exc.code >= 500:
+            raise EmbeddingRetryableError(
+                f"Embedding provider temporarily unavailable (HTTP {exc.code})."
+            ) from exc
+        raise EmbeddingError(
+            f"Embedding provider rejected the request (HTTP {exc.code}); check the API key and model."
+        ) from exc
     except (error.URLError, TimeoutError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        raise EmbeddingError("Embedding provider failed.") from exc
+        raise EmbeddingRetryableError("Embedding provider failed temporarily.") from exc
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:

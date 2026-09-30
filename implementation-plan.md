@@ -94,19 +94,22 @@ actions, and comprehensive backend/Playwright E2E test suites are complete.
 
 ## Phase 5 - Production-Ready Polish
 
+**Repository implementation status:** Code, docs, and CI are in place for session hardening, audit logging, bounded Gemini retries/rate limiting, metrics/monitoring configuration, production Compose deployment, image builds, security configuration, backup/restore scripts, and automated backend/frontend/E2E checks. Remaining launch gates are listed separately because they require an operator, target environment, or stakeholder.
+
 - [x] Harden session handling: secure cookie settings, configurable server-side session expiry, rotation on login, and revocation on logout.
-- Add audit‑log middleware that records user actions such as logins, ticket status changes and AI suggestion acceptance.
-- Implement exponential back‑off and rate‑limiting for Gemini API calls.
-- Deploy a monitoring stack (Prometheus + Grafana) and expose metrics from Django (`django‑prometheus`) and Celery.
-- Optimize Docker images with a multi‑stage build to keep them small.
-- Write a deployment guide covering Docker Compose usage and an optional Helm chart for Kubernetes.
-- Perform a security review against the OWASP Top 10 and fix any findings (CORS, CSRF, input validation, etc.).
-- Run a backup and restore drill for PostgreSQL and the pgvector data.
-- Finalise an end‑to‑end test suite that runs on every CI build.
-- Tag a release candidate (`v1.0.0‑rc`) and obtain stakeholder sign‑off.
+- [x] Add audit-log middleware for successful logins, logouts, ticket status changes, and AI suggestion acceptance without storing message bodies.
+- [x] Implement bounded exponential back-off for transient Gemini/embedding failures and production DRF rate limits for AI actions.
+- [x] Configure Prometheus metrics for Django and Celery; provision a Grafana Prometheus data source and basic target availability alert rule.
+- [x] Use multi-stage backend wheel builds and a separate frontend build/runtime image.
+- [x] Document provider-neutral Docker Compose deployment, monitoring, and safe backup/restore procedures. No Helm chart is included until a Kubernetes target and requirements are selected.
+- [x] Review application security defaults against OWASP Top 10 and fix findings in scope (production secret/hosts, HTTPS-only origins, secure cookies/HSTS, AI request throttling, and bounded knowledge-base uploads). Findings and residual deployment risks are documented in `SECURITY_REVIEW.md`; organization-specific approval remains a release gate.
+- [x] Add checksum-verified PostgreSQL/pgvector and media backup tooling plus a restore drill that restores only into a separate drill database.
+- [x] Run backend, frontend typecheck/build, and Playwright E2E jobs in CI for pushes/PRs.
+- [ ] Run and record backup/restore against the actual target production-like environment; local Docker daemon is unavailable in this workspace.
+- [ ] Select cloud provider/region, monitoring/alert delivery, secret storage, and backup retention/RPO/RTO. These decisions are still open in `project-scope.md`.
+- [ ] Obtain named stakeholder sign-off, then create the `v1.0.0-rc` tag. No sign-off owner has been identified; do not tag before approval.
 
-**Milestone:** System is ready for production launch in the chosen cloud region.
-
+**Milestone:** Application code and deployment artifacts are prepared. Production launch remains gated on the target-region decisions, live restore drill, security/release review, and stakeholder approval above.
 ---
 
 ### Timeline (approximate, assuming a single‑person full‑time effort)

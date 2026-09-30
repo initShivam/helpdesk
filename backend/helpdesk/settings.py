@@ -6,18 +6,23 @@ import os
 from pathlib import Path
 import dj_database_url
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / '.env')
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'replace-this-with-a-secure-key')
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 DJANGO_ENV = os.getenv('DJANGO_ENV', 'development').strip().lower()
 IS_PRODUCTION = DJANGO_ENV == 'production'
+_secret_key = os.getenv('DJANGO_SECRET_KEY', '')
+if IS_PRODUCTION and (not _secret_key or _secret_key == 'replace-this-with-a-secure-key'):
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set to a unique secret in production.')
+SECRET_KEY = _secret_key or 'replace-this-with-a-secure-key'
+
+# Keep production safe by default and refuse an explicit unsafe override.
+DEBUG = os.getenv('DJANGO_DEBUG', 'False' if IS_PRODUCTION else 'True').lower() == 'true'
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured('DJANGO_DEBUG must be False when DJANGO_ENV=production.')
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -27,6 +32,8 @@ ALLOWED_HOSTS = [
 
 if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
     ALLOWED_HOSTS.append(os.getenv('RENDER_EXTERNAL_HOSTNAME'))
+if IS_PRODUCTION and (not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS):
+    raise ImproperlyConfigured('Set DJANGO_ALLOWED_HOSTS to explicit production hostnames.')
 LOG_LEVEL = os.getenv('DJANGO_LOG_LEVEL', 'INFO')
 LOGGING = {
     'version': 1,
@@ -103,11 +110,13 @@ CSRF_COOKIE_HTTPONLY = False  # Needed for React frontend
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+SECURE_REFERRER_POLICY = 'same-origin'
 if IS_PRODUCTION:
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
 
 ROOT_URLCONF = 'helpdesk.urls'
 
@@ -141,6 +150,15 @@ if os.getenv('HELPDESK_E2E') == '1':
             'HOST': os.getenv('E2E_POSTGRES_HOST', os.getenv('POSTGRES_HOST', 'localhost')),
             'PORT': os.getenv('E2E_POSTGRES_PORT', os.getenv('POSTGRES_PORT', '5432')),
         }
+    }
+elif DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=IS_PRODUCTION,
+        )
     }
 elif os.getenv('POSTGRES_DB'):
     DATABASES = {
@@ -190,6 +208,9 @@ REST_FRAMEWORK = {
         'tickets.auth.SessionAuthenticationWith401',
     ],
 }
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+    'ai': os.getenv('AI_REQUESTS_PER_HOUR', '60/hour'),
+}
 
 if IS_PRODUCTION:
     REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = [
@@ -197,11 +218,12 @@ if IS_PRODUCTION:
         'rest_framework.throttling.UserRateThrottle',
         'rest_framework.throttling.ScopedRateThrottle',
     ]
-    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].update({
         'anon': '100/hour',
         'user': '1000/hour',
         'login': '10/hour',
-    }
+        'ai': os.getenv('AI_REQUESTS_PER_HOUR', '60/hour'),
+    })
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
@@ -217,7 +239,7 @@ if IS_PRODUCTION:
 # CORS
 CORS_ALLOW_CREDENTIALS = True
 
-CORS_ORIGIN_WHITELIST = [
+CORS_ORIGIN_WHITELIST = [] if IS_PRODUCTION else [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:5174',
@@ -225,11 +247,13 @@ CORS_ORIGIN_WHITELIST = [
 ]
 
 FRONTEND_URL = os.getenv('FRONTEND_URL')
+if IS_PRODUCTION and FRONTEND_URL and not FRONTEND_URL.startswith('https://'):
+    raise ImproperlyConfigured('FRONTEND_URL must use HTTPS in production.')
 
 if FRONTEND_URL:
     CORS_ORIGIN_WHITELIST.append(FRONTEND_URL)
 
-CSRF_TRUSTED_ORIGINS = [
+CSRF_TRUSTED_ORIGINS = [] if IS_PRODUCTION else [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:5174',
@@ -244,6 +268,8 @@ MEDIA_URL = '/media/'
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
 # Keep AI actions usable in a local setup without a running Redis/Celery worker.
 # Production continues to enqueue work for the configured worker.
 CELERY_TASK_ALWAYS_EAGER = os.getenv(

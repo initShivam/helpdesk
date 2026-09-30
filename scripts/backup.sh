@@ -1,13 +1,30 @@
-#!/bin/bash
-# scripts/backup.sh
-set -e
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
 
-# Run pg_dump from within the db container
-# The pgvector extension data is inherently backed up because it uses standard Postgres types.
-echo "Taking backup of helpdesk database..."
-docker exec helpdesk-db-1 pg_dump -U postgres -d helpdesk -F c -f /tmp/helpdesk_backup.dump
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+backup_dir="${1:-$repo_root/backups}"
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+prefix="helpdesk_${timestamp}"
 
-echo "Copying backup file from container to local machine..."
-docker cp helpdesk-db-1:/tmp/helpdesk_backup.dump ./helpdesk_backup.dump
+mkdir -p "$backup_dir"
+dump_tmp="$backup_dir/.${prefix}.dump.tmp"
+media_tmp="$backup_dir/.${prefix}.media.tar.gz.tmp"
+trap 'rm -f "$dump_tmp" "$media_tmp"' EXIT
 
-echo "Backup successful! Saved as ./helpdesk_backup.dump"
+docker compose -f "$compose_file" exec -T db \
+  sh -ec 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > "$dump_tmp"
+docker compose -f "$compose_file" run --rm --no-deps --entrypoint sh celery \
+  -ec 'tar -czf - -C /app/media .' > "$media_tmp"
+
+mv "$dump_tmp" "$backup_dir/${prefix}.dump"
+mv "$media_tmp" "$backup_dir/${prefix}.media.tar.gz"
+(
+  cd "$backup_dir"
+  sha256sum "${prefix}.dump" "${prefix}.media.tar.gz" > "${prefix}.sha256"
+)
+
+trap - EXIT
+printf 'Backup created: %s\n' "$backup_dir/$prefix"

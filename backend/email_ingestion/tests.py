@@ -158,8 +158,9 @@ class EmailIngestionTests(TestCase):
         app.loader.import_task_module("email_ingestion.tasks")
         self.assertIn("email_ingestion.tasks.fetch_emails", app.tasks)
 
+    @patch("tickets.tasks.retrieve", return_value=[])
     @patch("tickets.tasks.generate_with_gemini")
-    def test_email_to_ticket_to_ai_suggestion_flow(self, generate):
+    def test_email_to_ticket_to_ai_suggestion_flow(self, generate, retrieve):
         generate.return_value = (
             "Please restart the printer and try again. We can investigate further if the issue continues.",
             {"totalTokenCount": 18},
