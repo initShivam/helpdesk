@@ -265,6 +265,36 @@ if FRONTEND_URL:
 
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'
+MEDIA_STORAGE_BACKEND = os.getenv('MEDIA_STORAGE_BACKEND', 'filesystem').strip().lower()
+if MEDIA_STORAGE_BACKEND == 's3':
+    required_s3_settings = ('AWS_STORAGE_BUCKET_NAME', 'AWS_S3_REGION_NAME', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')
+    missing_s3_settings = [key for key in required_s3_settings if not os.getenv(key)]
+    if missing_s3_settings:
+        raise ImproperlyConfigured(
+            'S3 media storage requires: ' + ', '.join(missing_s3_settings)
+        )
+    INSTALLED_APPS.append('storages')
+    STORAGES = {
+        **globals().get('STORAGES', {}),
+        'default': {
+            'BACKEND': 'storages.backends.s3.S3Storage',
+            'OPTIONS': {
+                'bucket_name': os.environ.get('AWS_STORAGE_BUCKET_NAME'),
+                'region_name': os.getenv('AWS_S3_REGION_NAME') or None,
+                'endpoint_url': os.getenv('AWS_S3_ENDPOINT_URL') or None,
+                'access_key': os.getenv('AWS_ACCESS_KEY_ID') or None,
+                'secret_key': os.getenv('AWS_SECRET_ACCESS_KEY') or None,
+                'default_acl': None,
+                'file_overwrite': False,
+                'querystring_auth': True,
+            },
+        },
+        'staticfiles': {
+            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        },
+    }
+elif MEDIA_STORAGE_BACKEND != 'filesystem':
+    raise ImproperlyConfigured('MEDIA_STORAGE_BACKEND must be filesystem or s3.')
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)

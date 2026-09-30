@@ -101,15 +101,16 @@ actions, and comprehensive backend/Playwright E2E test suites are complete.
 - [x] Implement bounded exponential back-off for transient Gemini/embedding failures and production DRF rate limits for AI actions.
 - [x] Configure Prometheus metrics for Django and Celery; provision a Grafana Prometheus data source and basic target availability alert rule.
 - [x] Use multi-stage backend wheel builds and a separate frontend build/runtime image.
-- [x] Document provider-neutral Docker Compose deployment, monitoring, and safe backup/restore procedures. No Helm chart is included until a Kubernetes target and requirements are selected.
+- [x] Document Render deployment in Singapore with a Blueprint for the API, static frontend, Celery worker/Beat, managed Postgres/pgvector, and persistent Redis. Keep Docker Compose instructions for local development and self-hosting; Kubernetes/Helm is out of scope for the selected host.
 - [x] Review application security defaults against OWASP Top 10 and fix findings in scope (production secret/hosts, HTTPS-only origins, secure cookies/HSTS, AI request throttling, and bounded knowledge-base uploads). Findings and residual deployment risks are documented in `SECURITY_REVIEW.md`; organization-specific approval remains a release gate.
-- [x] Add checksum-verified PostgreSQL/pgvector and media backup tooling plus a restore drill that restores only into a separate drill database.
+- [x] Add checksum-verified PostgreSQL/pgvector and media backup tooling plus a restore drill that restores only into a separate drill database; add S3-compatible Django storage for shared, durable Render attachments.
 - [x] Run backend, frontend typecheck/build, and Playwright E2E jobs in CI for pushes/PRs.
-- [ ] Run and record backup/restore against the actual target production-like environment; local Docker daemon is unavailable in this workspace.
-- [ ] Select cloud provider/region, monitoring/alert delivery, secret storage, and backup retention/RPO/RTO. These decisions are still open in `project-scope.md`.
+- [ ] Create the private S3-compatible media bucket and enter its credentials in Render. The provider/bucket is not selected yet.
+- [ ] Run and record backup/restore against the actual Render environment; local Docker daemon is unavailable in this workspace.
+- [ ] Configure Render alert delivery, secret rotation, and backup retention/RPO/RTO; the Render region (Singapore) is selected.
 - [ ] Obtain named stakeholder sign-off, then create the `v1.0.0-rc` tag. No sign-off owner has been identified; do not tag before approval.
 
-**Milestone:** Application code and deployment artifacts are prepared. Production launch remains gated on the target-region decisions, live restore drill, security/release review, and stakeholder approval above.
+**Milestone:** Render deployment artifacts are prepared for Singapore. Production launch remains gated on object-storage credentials, alert/backup policy, the live restore drill, security/release review, and stakeholder approval above.
 ---
 
 ### Timeline (approximate, assuming a single‑person full‑time effort)

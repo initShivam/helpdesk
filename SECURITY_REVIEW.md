@@ -5,7 +5,7 @@ This is a source/configuration review against OWASP Top 10 (2021), not a penetra
 | Area | Repository controls and findings | Follow-up |
 | --- | --- | --- |
 | A01 Broken access control | Ticket APIs require authenticated agent/admin roles; user administration and knowledge-base management are admin-only; attachment downloads are scoped to the requested ticket. | Verify business-specific ticket visibility and admin role assignment in the target identity process. |
-| A02 Cryptographic failures | Production requires an explicit Django secret, HTTPS, secure session/CSRF cookies, HSTS, and same-origin referrer policy. Compose does not publish DB/Redis and binds UI/monitoring ports to loopback. | Terminate TLS at the selected trusted ingress, encrypt volumes/backups, and rotate any credentials previously committed in Git history. |
+| A02 Cryptographic failures | Production requires an explicit Django secret, HTTPS, secure session/CSRF cookies, HSTS, and same-origin referrer policy. S3 media storage uses private, signed access; Compose does not publish DB/Redis and binds UI/monitoring ports to loopback. | Enable bucket-side encryption, encrypt backups, and rotate any credentials previously committed in Git history. |
 | A03 Injection | Django ORM is used for application queries; health SQL is a fixed `SELECT 1`. React renders text through normal React escaping. Uploaded knowledge documents now have file type, size, page, and extracted-text limits. | Keep AI prompt-injection defenses under review; retrieval content is untrusted input. |
 | A04 Insecure design | AI operations are asynchronous in production, use bounded retry, and have a configurable per-user request throttle. Audit records avoid message bodies. | Define data retention, least-privilege service accounts, and recovery objectives for production. |
 | A05 Security misconfiguration | Production rejects DEBUG, wildcard/empty allowed hosts, placeholder secrets, and non-HTTPS frontend origins. Development CORS origins are restricted to localhost. | Restrict `/metrics` to the internal network at deployment and configure alert delivery. |
@@ -18,7 +18,8 @@ This is a source/configuration review against OWASP Top 10 (2021), not a penetra
 ## Verification performed
 
 - `python manage.py check --deploy` with production-only environment values: passed.
-- Backend suite: 68 tests passed, including knowledge-base upload validation coverage.
+- Backend suite: 68 tests passed, including knowledge-base upload validation coverage, before the final optional S3 backend wiring. The local project check and focused knowledge-base tests passed after that wiring; the S3 provider itself still needs a configured bucket for an integration check.
 - Frontend TypeScript check and production build: passed (the bundler reports a 739 KB JavaScript chunk).
 - `docker compose config` for development and production: passed with the required production Grafana password supplied.
+- Render Blueprint YAML syntax: parsed successfully; Render's own Blueprint sync validator was not available locally.
 - Backup/restore shell syntax: passed. A live restore, image build, E2E browser run, and penetration test were not possible here because the Docker daemon is unavailable.

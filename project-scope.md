@@ -54,10 +54,12 @@ The following are not part of the completed Phases 0-4:
 - Production monitoring, audit logs, backup drills, and deployment automation (Phase 5).
 - Kubernetes or Helm deployment (Phase 5).
 
-## Product decisions still required
+## Deployment decisions
 
-- Cloud provider and production region.
-- Production monitoring and alerting stack.
-- Gmail OAuth credential and token-storage policy.
-- Backup retention and restore objectives.
-- CI/CD secret-management policy.
+The hosting provider is Render. The API, workers, database, and Redis are configured for Singapore; Render hosts static sites on its global CDN. Remaining operational decisions are:
+
+- S3-compatible media bucket provider, region, and credential policy (the code and Blueprint support private S3-compatible storage).
+- Production monitoring/alert delivery and ownership.
+- Gmail credential/token rotation policy.
+- Backup retention, recovery point objective, and recovery time objective.
+- CI/CD and production secret-management policy.
