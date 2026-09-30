@@ -35,6 +35,15 @@ interface TicketMessage {
   is_draft?: boolean;
 }
 
+const getResponseError = async (response: Response, fallback: string) => {
+  try {
+    const data = await response.json();
+    return data.detail || data.error || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const TicketDetail: React.FC = () => {
   const { id } = useParams();
   const queryClient = useQueryClient();
@@ -134,7 +143,7 @@ const TicketDetail: React.FC = () => {
         headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) {
-        throw new Error('Unable to generate an AI suggestion.');
+        throw new Error(await getResponseError(response, 'Unable to generate an AI suggestion.'));
       }
       for (let attempt = 0; attempt < 30; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -202,7 +211,7 @@ const TicketDetail: React.FC = () => {
         headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) {
-        throw new Error('Unable to trigger AI classification.');
+        throw new Error(await getResponseError(response, 'Unable to trigger AI classification.'));
       }
       await new Promise((resolve) => setTimeout(resolve, 1500));
       await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
@@ -225,7 +234,7 @@ const TicketDetail: React.FC = () => {
         headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) {
-        throw new Error('Unable to trigger AI summarization.');
+        throw new Error(await getResponseError(response, 'Unable to trigger AI summarization.'));
       }
       await new Promise((resolve) => setTimeout(resolve, 1500));
       await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
@@ -312,8 +321,9 @@ const TicketDetail: React.FC = () => {
           {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
           {suggestionError && <p className="mt-3 text-sm text-red-600">{suggestionError}</p>}
           {ticket.ai_summary && (
-            <div className="mt-5 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">
-              <strong>AI summary:</strong> {ticket.ai_summary}
+            <div className="mt-5 min-w-0 rounded-lg bg-blue-50 p-4 text-sm text-blue-900 [overflow-wrap:anywhere]">
+              <strong className="block">AI summary:</strong>
+              <p className="mt-1 whitespace-pre-wrap break-words">{ticket.ai_summary}</p>
               {ticket.ai_category_confidence !== null && ticket.ai_category_confidence !== undefined && (
                 <span className="ml-2 text-blue-700">
                   ({Math.round(ticket.ai_category_confidence * 100)}% confidence)

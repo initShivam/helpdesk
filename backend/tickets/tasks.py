@@ -5,6 +5,7 @@ from django.utils import timezone
 from knowledge_base.retrieval import retrieve
 
 from .ai_service import (
+    AIConfigurationError,
     AISuggestionError,
     build_classification_prompt,
     build_prompt,
@@ -15,7 +16,13 @@ from .ai_service import (
 from .models import AILog, Ticket, TicketMessage
 
 
-@shared_task(bind=True, autoretry_for=(AISuggestionError,), retry_backoff=True, max_retries=2)
+@shared_task(
+    bind=True,
+    autoretry_for=(AISuggestionError,),
+    dont_autoretry_for=(AIConfigurationError,),
+    retry_backoff=True,
+    max_retries=2,
+)
 def generate_ai_suggestion(self, ticket_id: int) -> int:
     ticket = Ticket.objects.get(pk=ticket_id)
     log = AILog.objects.create(
@@ -62,7 +69,13 @@ def generate_ai_suggestion(self, ticket_id: int) -> int:
         raise
 
 
-@shared_task(bind=True, autoretry_for=(AISuggestionError,), retry_backoff=True, max_retries=2)
+@shared_task(
+    bind=True,
+    autoretry_for=(AISuggestionError,),
+    dont_autoretry_for=(AIConfigurationError,),
+    retry_backoff=True,
+    max_retries=2,
+)
 def classify_ticket(self, ticket_id: int) -> str:
     """Classify a ticket using Gemini with few-shot examples and persist the predicted category."""
     ticket = Ticket.objects.get(pk=ticket_id)
@@ -103,7 +116,13 @@ def classify_ticket(self, ticket_id: int) -> str:
         raise
 
 
-@shared_task(bind=True, autoretry_for=(AISuggestionError,), retry_backoff=True, max_retries=2)
+@shared_task(
+    bind=True,
+    autoretry_for=(AISuggestionError,),
+    dont_autoretry_for=(AIConfigurationError,),
+    retry_backoff=True,
+    max_retries=2,
+)
 def summarize_ticket(self, ticket_id: int) -> str:
     """Create a concise AI-generated summary message for a ticket."""
     ticket = Ticket.objects.get(pk=ticket_id)

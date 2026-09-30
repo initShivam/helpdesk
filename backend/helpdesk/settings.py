@@ -4,7 +4,7 @@ Generated via Context7 documentation for Django 5.x.
 """
 import os
 from pathlib import Path
-
+import dj_database_url
 from dotenv import load_dotenv
 
 # Base directory
@@ -19,8 +19,14 @@ DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 DJANGO_ENV = os.getenv('DJANGO_ENV', 'development').strip().lower()
 IS_PRODUCTION = DJANGO_ENV == 'production'
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    if host.strip()
+]
 
+if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+    ALLOWED_HOSTS.append(os.getenv('RENDER_EXTERNAL_HOSTNAME'))
 LOG_LEVEL = os.getenv('DJANGO_LOG_LEVEL', 'INFO')
 LOGGING = {
     'version': 1,
@@ -65,8 +71,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django_prometheus.middleware.PrometheusBeforeMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -81,9 +88,15 @@ MIDDLEWARE = [
 SESSION_COOKIE_SECURE = IS_PRODUCTION
 SESSION_COOKIE_HTTPONLY = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_COOKIE_SAMESITE = 'None' if IS_PRODUCTION else 'Lax'
+SESSION_COOKIE_AGE = int(
+    os.getenv('SESSION_COOKIE_AGE', '28800' if IS_PRODUCTION else '1209600')
+)
+
 
 # CSRF Security
 CSRF_COOKIE_SECURE = IS_PRODUCTION
+CSRF_COOKIE_SAMESITE = 'None' if IS_PRODUCTION else 'Lax'
 CSRF_COOKIE_HTTPONLY = False  # Needed for React frontend
 
 # Security Headers (OWASP Top 10)
@@ -94,7 +107,7 @@ if IS_PRODUCTION:
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 ROOT_URLCONF = 'helpdesk.urls'
 
@@ -117,6 +130,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'helpdesk.wsgi.application'
 
 # Database – default to PostgreSQL, fallback to SQLite for quick dev
+DATABASE_URL = os.getenv('DATABASE_URL')
 if os.getenv('HELPDESK_E2E') == '1':
     DATABASES = {
         'default': {
@@ -164,7 +178,8 @@ USE_TZ = True
 # Static files
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
+if IS_PRODUCTION:
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.User'
@@ -199,13 +214,21 @@ if IS_PRODUCTION:
     }
 
 # CORS – allow either hostname commonly used by the local Vite server.
+# CORS
 CORS_ALLOW_CREDENTIALS = True
+
 CORS_ORIGIN_WHITELIST = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
 ]
+
+FRONTEND_URL = os.getenv('FRONTEND_URL')
+
+if FRONTEND_URL:
+    CORS_ORIGIN_WHITELIST.append(FRONTEND_URL)
+
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
@@ -213,11 +236,20 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:5174',
 ]
 
+if FRONTEND_URL:
+    CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
+
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+# Keep AI actions usable in a local setup without a running Redis/Celery worker.
+# Production continues to enqueue work for the configured worker.
+CELERY_TASK_ALWAYS_EAGER = os.getenv(
+    'CELERY_TASK_ALWAYS_EAGER',
+    'False' if IS_PRODUCTION else 'True',
+) == 'True'
 CELERY_BEAT_SCHEDULE = {
     'fetch-emails-every-five-minutes': {
         'task': 'email_ingestion.tasks.fetch_emails',

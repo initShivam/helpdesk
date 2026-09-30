@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.conf import settings
 from django.http import FileResponse
 from django.utils.text import get_valid_filename
 from email_ingestion.models import EmailAttachment
@@ -15,6 +16,18 @@ from .serializers import TicketSerializer, TicketMessageSerializer
 from .auth import SessionAuthenticationWith401
 from .ai import enrich_ticket
 from .tasks import generate_ai_suggestion, classify_ticket, summarize_ticket
+
+
+def _enqueue_ai_task(task, ticket_id):
+    """Queue AI work, surfacing task failures when local eager mode is enabled."""
+    result = task.delay(ticket_id)
+    if settings.CELERY_TASK_ALWAYS_EAGER and result.failed():
+        return Response(
+            {"detail": str(result.result) or "AI task failed. Check the server configuration."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return Response({"task_id": result.id}, status=status.HTTP_202_ACCEPTED)
+
 
 class TicketPermission(permissions.BasePermission):
     """Custom permission for TicketViewSet.
@@ -70,20 +83,17 @@ class TicketViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="suggest-reply")
     def suggest_reply(self, request, pk=None):
         ticket = self.get_object()
-        task = generate_ai_suggestion.delay(ticket.pk)
-        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+        return _enqueue_ai_task(generate_ai_suggestion, ticket.pk)
 
     @action(detail=True, methods=["post"], url_path="classify")
     def classify(self, request, pk=None):
         ticket = self.get_object()
-        task = classify_ticket.delay(ticket.pk)
-        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+        return _enqueue_ai_task(classify_ticket, ticket.pk)
 
     @action(detail=True, methods=["post"], url_path="summarize")
     def summarize(self, request, pk=None):
         ticket = self.get_object()
-        task = summarize_ticket.delay(ticket.pk)
-        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+        return _enqueue_ai_task(summarize_ticket, ticket.pk)
 
     @action(detail=True, methods=["get"], url_path="suggestion-status")
     def suggestion_status(self, request, pk=None):

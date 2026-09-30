@@ -3,12 +3,17 @@ import re
 from urllib import error, request
 
 from django.conf import settings
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from knowledge_base.retrieval import RetrievedChunk
 
 
 class AISuggestionError(Exception):
     """Raised when a suggested reply cannot be generated."""
+
+
+class AIConfigurationError(AISuggestionError):
+    """Raised for AI setup problems that retries cannot resolve."""
 
 
 _PII_PATTERNS = (
@@ -41,18 +46,20 @@ def build_prompt(ticket, messages: list, context: list[RetrievedChunk]) -> str:
     )
 
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+def generate_with_gemini(prompt: str) -> tuple[str, dict]:
+    api_key = getattr(settings, "GEMINI_API_KEY", "")
+    if not api_key:
+        raise AIConfigurationError("GEMINI_API_KEY is not configured. Add it to the root .env file and restart Django.")
+    return _generate_with_gemini(prompt, api_key)
+
 
 @retry(
     stop=stop_after_attempt(5),
     wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(AISuggestionError)
+    retry=retry_if_exception_type(AISuggestionError),
+    reraise=True,
 )
-def generate_with_gemini(prompt: str) -> tuple[str, dict]:
-    api_key = getattr(settings, "GEMINI_API_KEY", "")
-    if not api_key:
-        raise AISuggestionError("GEMINI_API_KEY is not configured.")
-
+def _generate_with_gemini(prompt: str, api_key: str) -> tuple[str, dict]:
     model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
     endpoint = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"

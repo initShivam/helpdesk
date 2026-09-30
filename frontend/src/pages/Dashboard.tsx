@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ResponsiveContainer,
@@ -16,6 +16,7 @@ import {
   Legend,
 } from 'recharts';
 import NavBar from '../components/NavBar';
+import { AuthContext } from '../context/AuthContext';
 import { apiJson } from '../api';
 import { AnalyticsOverview } from '../types';
 
@@ -28,11 +29,15 @@ const CATEGORY_COLORS: Record<string, string> = {
 const AI_COLORS = ['#3b82f6', '#cbd5e1']; // blue (accepted), slate (pending)
 
 const Dashboard: React.FC = () => {
+  const auth = useContext(AuthContext);
   const [days, setDays] = useState<number>(14);
+
+  const isStaffOrAgent = auth?.user?.role === 'ADMIN' || auth?.user?.role === 'AGENT';
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['analytics-overview', days],
     queryFn: () => apiJson<AnalyticsOverview>(`/api/analytics/overview?days=${days}`),
+    enabled: Boolean(auth?.user && isStaffOrAgent),
   });
 
   const formattedTrendData = React.useMemo(() => {
@@ -280,7 +285,7 @@ const Dashboard: React.FC = () => {
                           borderColor: '#e2e8f0',
                           fontSize: '0.75rem',
                         }}
-                        formatter={(val: number) => [`${val} tickets`, 'Volume']}
+                        formatter={(val: any) => [`${val ?? 0} tickets`, 'Volume']}
                         labelFormatter={(_, payload) => {
                           const item = payload?.[0]?.payload as { date?: string } | undefined;
                           return item?.date ? `Date: ${item.date}` : '';
@@ -395,7 +400,7 @@ const Dashboard: React.FC = () => {
                           borderColor: '#e2e8f0',
                           fontSize: '0.75rem',
                         }}
-                        formatter={(val: number) => [`${val} tickets`, 'Count']}
+                        formatter={(val: any) => [`${val ?? 0} tickets`, 'Count']}
                       />
                       <Bar dataKey="count" radius={[6, 6, 0, 0]}>
                         {data.categories.map((entry) => (
@@ -444,7 +449,7 @@ const Dashboard: React.FC = () => {
                           borderColor: '#e2e8f0',
                           fontSize: '0.75rem',
                         }}
-                        formatter={(val: number) => [`${val} tickets`, 'Count']}
+                        formatter={(val: any) => [`${val ?? 0} tickets`, 'Count']}
                       />
                       <Bar dataKey="count" radius={[6, 6, 0, 0]}>
                         {data.priorities.map((entry) => {

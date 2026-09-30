@@ -94,7 +94,7 @@ actions, and comprehensive backend/Playwright E2E test suites are complete.
 
 ## Phase 5 - Production-Ready Polish
 
-- Harden session handling: secure cookie settings, session expiry, rotation on login, and revocation on logout.
+- [x] Harden session handling: secure cookie settings, configurable server-side session expiry, rotation on login, and revocation on logout.
 - Add audit‑log middleware that records user actions such as logins, ticket status changes and AI suggestion acceptance.
 - Implement exponential back‑off and rate‑limiting for Gemini API calls.
 - Deploy a monitoring stack (Prometheus + Grafana) and expose metrics from Django (`django‑prometheus`) and Celery.

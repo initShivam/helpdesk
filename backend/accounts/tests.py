@@ -52,6 +52,49 @@ class AuthenticationAndUserManagementTests(TestCase):
         self.assertEqual(response.data["email"], "admin@example.com")
         self.assertEqual(response.data["role"], User.ROLE_ADMIN)
 
+    def test_login_rotates_the_anonymous_session_key(self):
+        csrf_token = self.client.get("/api/auth/csrf/").data["csrfToken"]
+        session = self.client.session
+        session["pre_login_value"] = "preserved"
+        session.save()
+        old_session_key = session.session_key
+        self.client.cookies["sessionid"] = old_session_key
+
+        response = self.client.post(
+            "/api/auth/login/",
+            {"username": "admin", "password": "adminpass"},
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(
+            old_session_key,
+            self.client.cookies["sessionid"].value,
+        )
+        self.assertEqual(self.client.session.get("pre_login_value"), "preserved")
+
+    def test_logout_revokes_the_session(self):
+        csrf_token = self.client.get("/api/auth/csrf/").data["csrfToken"]
+        response = self.client.post(
+            "/api/auth/login/",
+            {"username": "admin", "password": "adminpass"},
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.client.cookies["sessionid"].value)
+
+        csrf_token = self.client.get("/api/auth/csrf/").data["csrfToken"]
+        response = self.client.post(
+            "/api/auth/logout/",
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get("/api/auth/me/").status_code, 401)
+
     def test_admin_can_create_user_with_login_ready_password(self):
         self.client.force_login(self.admin)
         response = self.client.post(
