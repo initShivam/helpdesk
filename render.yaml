@@ -2,8 +2,8 @@ services:
   - type: web
     name: helpdesk-api
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     region: singapore
     preDeployCommand: python manage.py migrate
     dockerCommand: >-
@@ -87,8 +87,8 @@ services:
   - type: worker
     name: helpdesk-celery
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     region: singapore
     dockerCommand: celery -A helpdesk worker -l INFO --concurrency=2
     envVars: &backendEnv
@@ -177,8 +177,8 @@ services:
   - type: worker
     name: helpdesk-celery-beat
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     region: singapore
     dockerCommand: celery -A helpdesk beat -l INFO --schedule=/tmp/celerybeat-schedule
     envVars: *backendEnv
