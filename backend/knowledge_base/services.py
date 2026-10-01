@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
 from .models import Document, DocumentChunk
@@ -18,27 +19,37 @@ def _split_content(content: str, size: int = 1200) -> list[str]:
 
 def index_document(*, title: str, content: str, source: str = "") -> Document:
     document_embedding, embedding_model = embed_text(content)
-    document = Document.objects.create(
-        title=title,
-        content=content,
-        source=source,
-        embedding=document_embedding,
-        embedding_model=embedding_model,
-    )
     chunks = []
     for position, chunk in enumerate(_split_content(content)):
         embedding, chunk_model = embed_text(chunk)
-        chunk_model_instance = DocumentChunk(
+        chunks.append((
+            chunk,
+            position,
+            embedding,
+            chunk_model,
+        ))
+
+    with transaction.atomic():
+        document = Document.objects.create(
+            title=title,
+            content=content,
+            source=source,
+            embedding=document_embedding,
+            embedding_model=embedding_model,
+        )
+        chunk_models = [
+            DocumentChunk(
                 document=document,
-                content=chunk,
+                content=chunk_content,
                 position=position,
                 embedding=embedding,
-                embedding_model=chunk_model,
+                embedding_model=model,
             )
-        chunks.append(chunk_model_instance)
-    DocumentChunk.objects.bulk_create(chunks)
-    for chunk in chunks:
-        store_chunk_vector(chunk.id, chunk.embedding, chunk.embedding_model)
+            for chunk_content, position, embedding, model in chunks
+        ]
+        DocumentChunk.objects.bulk_create(chunk_models)
+        for chunk in chunk_models:
+            store_chunk_vector(chunk.id, chunk.embedding, chunk.embedding_model)
     return document
 
 

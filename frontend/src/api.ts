@@ -6,7 +6,10 @@ export async function apiJson<T>(path: string, options?: RequestInit): Promise<T
     ...options,
   });
   if (!response.ok) {
-    throw new Error(`Request failed (HTTP ${response.status})`);
+    const errorData = (await response.json().catch(() => null)) as
+      | { detail?: string }
+      | null;
+    throw new Error(errorData?.detail || `Request failed (HTTP ${response.status})`);
   }
   return response.json() as Promise<T>;
 }

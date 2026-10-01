@@ -3,6 +3,25 @@ from django.db import models
 from tickets.models import Ticket, TicketMessage
 
 
+class MailboxSyncState(models.Model):
+    mailbox = models.CharField(max_length=255)
+    account_fingerprint = models.CharField(max_length=64)
+    uid_validity = models.PositiveBigIntegerField()
+    last_processed_uid = models.PositiveBigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["mailbox", "account_fingerprint"],
+                name="unique_mailbox_account_sync_state",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.mailbox} (UID {self.last_processed_uid})"
+
+
 class InboundEmail(models.Model):
     message_id = models.CharField(max_length=998, unique=True)
     thread_id = models.CharField(max_length=998, blank=True, default="")

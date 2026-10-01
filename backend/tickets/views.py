@@ -17,6 +17,7 @@ from .serializers import TicketSerializer, TicketMessageSerializer
 from .auth import SessionAuthenticationWith401
 from .ai import enrich_ticket
 from .tasks import generate_ai_suggestion, classify_ticket, summarize_ticket
+from .pagination import TicketPagination
 
 
 def _enqueue_ai_task(task, ticket_id):
@@ -77,8 +78,14 @@ class TicketViewSet(viewsets.ModelViewSet):
     serializer_class = TicketSerializer
     permission_classes = [TicketPermission]
     authentication_classes = [SessionAuthenticationWith401]
+    pagination_class = TicketPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "category", "priority", "assigned_to"]
+    filterset_fields = {
+        "status": ["exact"],
+        "category": ["exact"],
+        "priority": ["exact", "in"],
+        "assigned_to": ["exact"],
+    }
     search_fields = ["ticket_number", "subject", "requester_email"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
@@ -296,6 +303,7 @@ class AnalyticsOverviewView(APIView):
         # 6. Priority breakdown
         priority_counts = [
             {"priority": "high", "count": Ticket.objects.filter(priority="high").count()},
+            {"priority": "urgent", "count": Ticket.objects.filter(priority="urgent").count()},
             {"priority": "medium", "count": Ticket.objects.filter(priority="medium").count()},
             {"priority": "low", "count": Ticket.objects.filter(priority="low").count()},
         ]

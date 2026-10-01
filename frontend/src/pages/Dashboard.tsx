@@ -38,6 +38,9 @@ const Dashboard: React.FC = () => {
     queryKey: ['analytics-overview', days],
     queryFn: () => apiJson<AnalyticsOverview>(`/api/analytics/overview?days=${days}`),
     enabled: Boolean(auth?.user && isStaffOrAgent),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   const formattedTrendData = React.useMemo(() => {
@@ -454,7 +457,9 @@ const Dashboard: React.FC = () => {
                       <Bar dataKey="count" radius={[6, 6, 0, 0]}>
                         {data.priorities.map((entry) => {
                           const color =
-                            entry.priority === 'high'
+                            entry.priority === 'urgent'
+                              ? '#be123c'
+                              : entry.priority === 'high'
                               ? '#ef4444'
                               : entry.priority === 'medium'
                               ? '#f59e0b'

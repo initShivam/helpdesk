@@ -19,9 +19,10 @@ from .ai_service import (
 from .models import AILog, Ticket, TicketMessage
 from .tasks import classify_ticket, generate_ai_suggestion, summarize_ticket
 from knowledge_base.services import index_document
+from knowledge_base.embeddings import EmbeddingError
 
 
-@override_settings(GEMINI_API_KEY='')
+@override_settings(OPENAI_API_KEY='', EMBEDDING_PROVIDER='local')
 class TicketAIAnalysisTests(TestCase):
     def test_classifies_technical_ticket(self):
         analysis = analyze_ticket(
@@ -148,7 +149,7 @@ class TicketAIAnalysisTests(TestCase):
         self.assertNotIn("555-123-4567", sanitized)
         self.assertNotIn("shit", sanitized.lower())
 
-    @patch("tickets.tasks.generate_with_gemini")
+    @patch("tickets.tasks.generate_with_openai")
     def test_generate_suggestion_retrieves_context_and_creates_draft(self, generate):
         ticket = Ticket.objects.create(
             ticket_number="AI-SUGGEST-001",
@@ -164,7 +165,7 @@ class TicketAIAnalysisTests(TestCase):
             title="Password reset",
             content="Customers can reset a forgotten password from account security.",
         )
-        generate.return_value = ("Use the account security page to reset your password.", {"totalTokenCount": 20})
+        generate.return_value = ("Use the account security page to reset your password.", {"total_tokens": 20})
 
         log_id = generate_ai_suggestion.run(ticket.pk)
 
@@ -176,7 +177,7 @@ class TicketAIAnalysisTests(TestCase):
         self.assertEqual(draft.body, generate.return_value[0])
         generate.assert_called_once()
 
-    @patch("tickets.tasks.generate_with_gemini", side_effect=RuntimeError("provider down"))
+    @patch("tickets.tasks.generate_with_openai", side_effect=RuntimeError("provider down"))
     def test_generate_suggestion_records_failure(self, generate):
         ticket = Ticket.objects.create(
             ticket_number="AI-SUGGEST-002",
@@ -189,6 +190,23 @@ class TicketAIAnalysisTests(TestCase):
 
         log = AILog.objects.get(ticket=ticket)
         self.assertEqual(log.status, "failed")
+
+    @patch("tickets.tasks.retrieve", side_effect=EmbeddingError("Ollama is unreachable"))
+    def test_retrieval_failure_marks_suggestion_log_failed(self, retrieve):
+        ticket = Ticket.objects.create(
+            ticket_number="AI-SUGGEST-004",
+            subject="Need help",
+            requester_email="customer@example.com",
+        )
+
+        with self.assertRaises(EmbeddingError):
+            generate_ai_suggestion.run(ticket.pk)
+
+        log = AILog.objects.get(ticket=ticket, operation="suggest_reply")
+        self.assertEqual(log.status, "failed")
+        self.assertIn("Ollama is unreachable", log.error_message)
+        self.assertIsNotNone(log.completed_at)
+        retrieve.assert_called_once()
 
     def test_prompt_contains_ticket_and_retrieved_context(self):
         ticket = Ticket(
@@ -246,9 +264,9 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
-    @patch("tickets.tasks.generate_with_gemini")
-    def test_classify_ticket_task_success(self, mock_gemini):
-        mock_gemini.return_value = ("technical", {"totalTokenCount": 35})
+    @patch("tickets.tasks.generate_with_openai")
+    def test_classify_ticket_task_success(self, mock_openai):
+        mock_openai.return_value = ("technical", {"total_tokens": 35})
         ticket = Ticket.objects.create(
             ticket_number="PHASE4-001",
             subject="VPN connection repeatedly drops with TLS handshake failure",
@@ -270,11 +288,11 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
         self.assertEqual(log.response_text, "technical")
         self.assertIn("Few-shot examples", log.sanitized_prompt)
         self.assertIn("VPN connection repeatedly drops", log.sanitized_prompt)
-        mock_gemini.assert_called_once()
+        mock_openai.assert_called_once()
 
-    @patch("tickets.tasks.generate_with_gemini")
-    def test_classify_ticket_task_refund_category(self, mock_gemini):
-        mock_gemini.return_value = ("Category: refund", {})
+    @patch("tickets.tasks.generate_with_openai")
+    def test_classify_ticket_task_refund_category(self, mock_openai):
+        mock_openai.return_value = ("Category: refund", {})
         ticket = Ticket.objects.create(
             ticket_number="PHASE4-002",
             subject="Request a refund for erroneous billing",
@@ -290,8 +308,8 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
         self.assertEqual(ticket.category, "refund")
         self.assertEqual(ticket.classification, "refund")
 
-    @patch("tickets.tasks.generate_with_gemini", side_effect=RuntimeError("Gemini unavailable"))
-    def test_classify_ticket_task_failure_records_log(self, mock_gemini):
+    @patch("tickets.tasks.generate_with_openai", side_effect=RuntimeError("OpenAI unavailable"))
+    def test_classify_ticket_task_failure_records_log(self, mock_openai):
         ticket = Ticket.objects.create(
             ticket_number="PHASE4-003",
             subject="System down",
@@ -303,12 +321,12 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
 
         log = AILog.objects.get(ticket=ticket, operation="classify")
         self.assertEqual(log.status, "failed")
-        self.assertIn("Gemini unavailable", log.error_message)
+        self.assertIn("OpenAI unavailable", log.error_message)
 
-    @patch("tickets.tasks.generate_with_gemini")
-    def test_summarize_ticket_task_success(self, mock_gemini):
+    @patch("tickets.tasks.generate_with_openai")
+    def test_summarize_ticket_task_success(self, mock_openai):
         summary_text = "Customer encountered 403 forbidden error during SSO login; advised admin credential reset."
-        mock_gemini.return_value = (summary_text, {"totalTokenCount": 50})
+        mock_openai.return_value = (summary_text, {"total_tokens": 50})
         ticket = Ticket.objects.create(
             ticket_number="PHASE4-004",
             subject="Cannot log in with SSO",
@@ -336,8 +354,8 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
         self.assertEqual(log.response_text, summary_text)
         self.assertIn("403 Forbidden", log.sanitized_prompt)
 
-    @patch("tickets.tasks.generate_with_gemini", side_effect=RuntimeError("AI summary timeout"))
-    def test_summarize_ticket_task_failure_records_log(self, mock_gemini):
+    @patch("tickets.tasks.generate_with_openai", side_effect=RuntimeError("AI summary timeout"))
+    def test_summarize_ticket_task_failure_records_log(self, mock_openai):
         ticket = Ticket.objects.create(
             ticket_number="PHASE4-005",
             subject="Timeout issue",
@@ -429,7 +447,7 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
         # Setup AI logs: 2 suggestions generated, 1 accepted
         ai_log1 = AILog.objects.create(
             ticket=t1,
-            model="gemini-2.0-flash",
+            model="gpt-6-luna",
             operation="suggest_reply",
             status="succeeded",
         )
@@ -445,7 +463,7 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
 
         ai_log2 = AILog.objects.create(
             ticket=t2,
-            model="gemini-2.0-flash",
+            model="gpt-6-luna",
             operation="suggest_reply",
             status="succeeded",
         )
@@ -522,4 +540,3 @@ class Phase4ClassificationSummariesDashboardTests(TestCase):
         # Ordering by created_at descending
         res_desc = self.client.get("/api/tickets/?ordering=-created_at")
         self.assertEqual(res_desc.status_code, 200)
-

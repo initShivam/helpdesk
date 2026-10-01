@@ -74,6 +74,11 @@ const TicketDetail: React.FC = () => {
   });
   const ticket = ticketQuery.data ?? null;
   const messages = messagesQuery.data ?? [];
+  // Summaries already have their own panel above. They are persisted as system
+  // messages for audit/history, so keep them out of the customer conversation.
+  const conversationMessages = messages.filter(
+    (message) => !(message.is_ai_generated && !message.is_draft && message.message_type === 'system'),
+  );
   const setMessages = (updater: (current: TicketMessage[]) => TicketMessage[]) => {
     queryClient.setQueryData<TicketMessage[]>(['ticket-messages', id], (current = []) => updater(current));
   };
@@ -387,13 +392,13 @@ const TicketDetail: React.FC = () => {
         </section>
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-slate-900">Messages</h2>
-          {messages.length === 0 ? (
+          {conversationMessages.length === 0 ? (
             <p className="text-sm text-slate-500">No messages yet.</p>
-          ) : messages.map((message) => (
+          ) : conversationMessages.map((message) => (
             <article key={message.id} className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-semibold uppercase text-slate-500">
-                  {message.is_ai_generated ? 'AI suggested reply' : message.message_type}
+                  {message.is_ai_generated && message.is_draft ? 'AI suggested reply' : message.message_type}
                 </p>
                 {message.is_ai_generated && message.is_draft && (
                   <button

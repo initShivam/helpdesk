@@ -1,21 +1,34 @@
 import hashlib
-import json
+import logging
 import math
-from urllib import error, request
 
+import httpx
 from django.conf import settings
+from ollama import Client, ResponseError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+from helpdesk.ai_privacy import sanitize_prompt
+
+
+logger = logging.getLogger(__name__)
+EMBEDDING_DIMENSIONS = 768
+LOCAL_EMBEDDING_MODEL = "local-hash-fallback"
 
 
 class EmbeddingError(Exception):
-    """Raised when an embedding provider cannot return a vector."""
+    """Raised when an embedding provider cannot return a usable vector."""
+
+
+class EmbeddingConfigurationError(EmbeddingError):
+    """Raised for provider configuration and missing-model problems."""
 
 
 class EmbeddingRetryableError(EmbeddingError):
     """Raised for temporary embedding provider failures."""
 
 
-def _local_embedding(text: str, dimensions: int = 768) -> list[float]:
-    """Stable offline fallback used by tests and development without an API key."""
+def _local_embedding(text: str, dimensions: int = EMBEDDING_DIMENSIONS) -> list[float]:
+    """Stable explicitly selected offline fallback used in development and tests."""
     vector = [0.0] * dimensions
     for token in text.lower().split():
         digest = hashlib.sha256(token.encode("utf-8")).digest()
@@ -25,7 +38,16 @@ def _local_embedding(text: str, dimensions: int = 768) -> list[float]:
     return [round(value / norm, 8) for value in vector]
 
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+def configured_embedding_model() -> str:
+    provider = getattr(settings, "EMBEDDING_PROVIDER", "ollama").strip().lower()
+    if provider == "local":
+        return LOCAL_EMBEDDING_MODEL
+    if provider != "ollama":
+        raise EmbeddingConfigurationError(
+            f"Unsupported embedding provider '{provider}'. Use 'ollama' or 'local'."
+        )
+    return f"ollama:{getattr(settings, 'OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')}"
+
 
 @retry(
     stop=stop_after_attempt(3),
@@ -34,39 +56,73 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
     reraise=True,
 )
 def embed_text(text: str) -> tuple[list[float], str]:
-    api_key = getattr(settings, "GEMINI_API_KEY", "")
-    model = getattr(settings, "GEMINI_EMBEDDING_MODEL", "text-embedding-004")
-    if not api_key:
-        return _local_embedding(text), "local-hash-fallback"
+    """Return a 768-dimensional vector and provider-qualified model identifier."""
+    text = sanitize_prompt(text)
+    provider = getattr(settings, "EMBEDDING_PROVIDER", "ollama").strip().lower()
 
-    endpoint = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent"
-        f"?key={api_key}"
-    )
-    payload = json.dumps({"content": {"parts": [{"text": text}]}}).encode("utf-8")
-    req = request.Request(
-        endpoint,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+    if provider == "local":
+        return _local_embedding(text), LOCAL_EMBEDDING_MODEL
+    if provider != "ollama":
+        raise EmbeddingConfigurationError(
+            f"Unsupported embedding provider '{provider}'. Use 'ollama' or 'local'."
+        )
+
+    model = getattr(settings, "OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
+    model_id = f"ollama:{model}"
+    base_url = getattr(settings, "OLLAMA_BASE_URL", "http://localhost:11434")
+    timeout = getattr(settings, "OLLAMA_TIMEOUT_SECONDS", 120)
+    client = Client(host=base_url, timeout=timeout)
+
     try:
-        with request.urlopen(req, timeout=getattr(settings, "AI_SUGGESTION_TIMEOUT", 30)) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        values = data["embedding"]["values"]
-        if not values:
-            raise ValueError("empty embedding")
-        return [float(value) for value in values], model
-    except error.HTTPError as exc:
-        if exc.code == 429 or exc.code >= 500:
-            raise EmbeddingRetryableError(
-                f"Embedding provider temporarily unavailable (HTTP {exc.code})."
+        response = client.embed(model=model, input=text)
+        embeddings = response.embeddings
+        vector = [float(value) for value in embeddings[0]]
+        if len(vector) != EMBEDDING_DIMENSIONS:
+            raise ValueError(
+                f"expected {EMBEDDING_DIMENSIONS} dimensions, received {len(vector)}"
+            )
+        return vector, model_id
+    except ResponseError as exc:
+        if exc.status_code == 404:
+            logger.error("ollama_embedding_model_missing model=%s", model)
+            raise EmbeddingConfigurationError(
+                f"Ollama model '{model}' is not available. Install it with 'ollama pull {model}'."
             ) from exc
+        if exc.status_code == 429 or exc.status_code >= 500:
+            logger.warning(
+                "ollama_embedding_provider_error model=%s status=%s retryable=true",
+                model,
+                exc.status_code,
+            )
+            raise EmbeddingRetryableError(
+                f"Ollama embedding service temporarily unavailable (HTTP {exc.status_code})."
+            ) from exc
+        logger.error(
+            "ollama_embedding_provider_error model=%s status=%s retryable=false",
+            model,
+            exc.status_code,
+        )
         raise EmbeddingError(
-            f"Embedding provider rejected the request (HTTP {exc.code}); check the API key and model."
+            f"Ollama rejected the embedding request (HTTP {exc.status_code})."
         ) from exc
-    except (error.URLError, TimeoutError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        raise EmbeddingRetryableError("Embedding provider failed temporarily.") from exc
+    except (ConnectionError, httpx.TimeoutException, TimeoutError) as exc:
+        logger.warning(
+            "ollama_embedding_connection_error model=%s error_type=%s retryable=true",
+            model,
+            type(exc).__name__,
+        )
+        raise EmbeddingRetryableError(
+            "Cannot connect to Ollama. Ensure it is running and reachable at OLLAMA_BASE_URL."
+        ) from exc
+    except (AttributeError, IndexError, TypeError, ValueError) as exc:
+        logger.error(
+            "ollama_embedding_invalid_response model=%s error_type=%s",
+            model,
+            type(exc).__name__,
+        )
+        raise EmbeddingError(
+            f"Ollama returned an invalid embedding; expected {EMBEDDING_DIMENSIONS} dimensions."
+        ) from exc
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:

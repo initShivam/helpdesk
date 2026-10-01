@@ -12,7 +12,7 @@ user migration are complete.
 - Configure a GitHub Actions workflow that runs linting, unit tests and builds Docker images on each PR.
 - Scaffold a new Django project called **helpdesk** and install Django REST Framework.
 - Create a fresh React + TypeScript project (Vite) and add Tailwind CSS.
-- Write a `.env.example` that documents required environment variables (DB credentials, Django session secret, Gemini API key, Gmail OAuth client, etc.).
+- Write a `.env.example` that documents required environment variables (DB credentials, Django session secret, OpenAI API key, Gmail IMAP credentials, etc.).
 - Add a custom `User` model that extends `AbstractUser` and run the initial migration.
  
 
@@ -52,16 +52,16 @@ are complete.
 ## Phase 3 - AI Integration (RAG & Suggested Replies)
 
 **Status:** Implemented in the current branch. The repository now includes a knowledge-base
-document/chunk index with Markdown/PDF ingestion, provider-backed embeddings, an optional
-pgvector store, cosine-similarity retrieval, prompt sanitisation, Gemini generation, AI
+document/chunk index with Markdown/PDF ingestion, Ollama-backed embeddings, an optional
+pgvector store, cosine-similarity retrieval, prompt sanitisation, OpenAI generation, AI
 request logging, a retrying Celery suggestion task, suggestion review/edit/accept endpoints,
 ticket-detail UI controls, and focused backend/Playwright coverage. JSON vectors remain the
 local fallback when the extension is unavailable; Docker Compose uses the pgvector image
 and enables the pgvector store.
 
 - Create a `knowledge_base` app with a `Document` model for Markdown/PDF files.
-- Set up an embedding pipeline using a lightweight model (e.g., `text‑embedding‑ada‑002`) and store vectors in a `pgvector` column.
-- Write a RAG service that retrieves the most relevant vectors, builds a structured prompt and calls the Gemini API.
+- Set up an embedding pipeline using Ollama `nomic-embed-text` and store 768-dimensional vectors in a `pgvector` column.
+- Write a RAG service that retrieves the most relevant vectors, builds a structured prompt and calls the OpenAI Responses API.
 - Add a safety filter (regex based) that removes profanity or PII before sending the prompt.
 - Log each AI call in an `ai_logs` table, recording ticket, model, token usage, timestamp and the sanitized prompt.
 - Create a Celery task `generate_ai_suggestion(ticket_id)` that stores the AI‑generated reply as a `TicketMessage` with `is_ai_generated=True`.
@@ -73,14 +73,14 @@ and enables the pgvector store.
 ## Phase 4 - Classification, Summaries & Dashboard
 
 **Status:** Implemented in the current branch. Ticket classification and summarization
-Celery tasks with few-shot Gemini prompting, operational analytics overview endpoint
+Celery tasks with few-shot OpenAI prompting, operational analytics overview endpoint
 (`/api/analytics/overview`), Recharts analytics dashboard with daily volume trends,
 average first-reply time, and AI suggestion adoption metrics, ticket list filtering by
 status/category, creation date ordering, ticket detail AI classification/summarization
 actions, and comprehensive backend/Playwright E2E test suites are complete.
 
 - Add a classification field to `Ticket` (General, Technical, Refund).
-- Implement a Celery task `classify_ticket(ticket_id)` that prompts Gemini with a few‑shot example and stores the predicted category.
+- Implement a Celery task `classify_ticket(ticket_id)` that prompts OpenAI with a few-shot example and stores the predicted category.
 - Implement a summarization task `summarize_ticket(ticket_id)` that creates a concise AI‑generated summary message.
 - Enhance the ticket list UI with filters for status and category, and allow sorting by creation date.
 - Build a dashboard page using Recharts or Chart.js that shows:
@@ -94,11 +94,11 @@ actions, and comprehensive backend/Playwright E2E test suites are complete.
 
 ## Phase 5 - Production-Ready Polish
 
-**Repository implementation status:** Code, docs, and CI are in place for session hardening, audit logging, bounded Gemini retries/rate limiting, metrics/monitoring configuration, production Compose deployment, image builds, security configuration, backup/restore scripts, and automated backend/frontend/E2E checks. Remaining launch gates are listed separately because they require an operator, target environment, or stakeholder.
+**Repository implementation status:** Code, docs, and CI are in place for session hardening, audit logging, bounded OpenAI retries/rate limiting, metrics/monitoring configuration, production Compose deployment, image builds, security configuration, backup/restore scripts, and automated backend/frontend/E2E checks. Remaining launch gates are listed separately because they require an operator, target environment, or stakeholder.
 
 - [x] Harden session handling: secure cookie settings, configurable server-side session expiry, rotation on login, and revocation on logout.
 - [x] Add audit-log middleware for successful logins, logouts, ticket status changes, and AI suggestion acceptance without storing message bodies.
-- [x] Implement bounded exponential back-off for transient Gemini/embedding failures and production DRF rate limits for AI actions.
+- [x] Implement bounded exponential back-off for transient OpenAI/embedding failures and production DRF rate limits for AI actions.
 - [x] Configure Prometheus metrics for Django and Celery; provision a Grafana Prometheus data source and basic target availability alert rule.
 - [x] Use multi-stage backend wheel builds and a separate frontend build/runtime image.
 - [x] Document Render deployment in Singapore with a Blueprint for the API, static frontend, Celery worker/Beat, managed Postgres/pgvector, and persistent Redis. Keep Docker Compose instructions for local development and self-hosting; Kubernetes/Helm is out of scope for the selected host.

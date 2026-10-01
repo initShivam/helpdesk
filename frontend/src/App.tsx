@@ -1,58 +1,69 @@
-import React, { useState, useContext, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useContext } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import NavBar from './components/NavBar';
 import { AuthContext } from './context/AuthContext';
 import { Link } from 'react-router-dom';
-import { apiJson } from './api';
+import { apiJson, getCsrfToken } from './api';
 import { Ticket } from './types';
+
+const TICKETS_PER_PAGE = 30;
+
+interface PaginatedTickets {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: Ticket[];
+  stats: {
+    total: number;
+    open: number;
+    high_urgent: number;
+    resolved: number;
+  };
+}
 
 const App: React.FC = () => {
   const auth = useContext(AuthContext);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState<'all' | 'high-urgent'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [page, setPage] = useState(1);
+  const [isSyncingEmail, setIsSyncingEmail] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const ticketsQuery = useQuery({
-    queryKey: ['tickets'],
-    queryFn: async () => {
-      const data = await apiJson<Ticket[] | { results: Ticket[] }>('/api/tickets/');
-      return Array.isArray(data) ? data : data.results;
+    queryKey: ['tickets', page, filterStatus, filterCategory, filterPriority, searchQuery, sortOrder],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        ordering: sortOrder === 'desc' ? '-created_at' : 'created_at',
+      });
+      if (filterStatus !== 'all') params.set('status', filterStatus);
+      if (filterCategory !== 'all') params.set('category', filterCategory);
+      if (filterPriority === 'high-urgent') params.set('priority__in', 'high,urgent');
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      return apiJson<PaginatedTickets>(`/api/tickets/?${params.toString()}`);
     },
     enabled: Boolean(auth?.user),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
-  const tickets = ticketsQuery.data ?? [];
+  const tickets = ticketsQuery.data?.results ?? [];
+  const filteredTickets = tickets;
   const loading = ticketsQuery.isLoading;
   const error = ticketsQuery.error instanceof Error ? ticketsQuery.error.message : null;
-
-  const filteredTickets = useMemo(() => {
-    return tickets
-      .filter((t) => {
-        const matchesStatus =
-          filterStatus === 'all' || t.status.toLowerCase() === filterStatus.toLowerCase();
-
-        const cat = (t.category || t.classification || '').toLowerCase();
-        const matchesCategory =
-          filterCategory === 'all' || cat === filterCategory.toLowerCase();
-
-        const matchesSearch =
-          searchQuery === '' ||
-          t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          t.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (t.requester_email && t.requester_email.toLowerCase().includes(searchQuery.toLowerCase()));
-
-        return matchesStatus && matchesCategory && matchesSearch;
-      })
-      .sort((a, b) => {
-        const timeA = new Date(a.created_at).getTime();
-        const timeB = new Date(b.created_at).getTime();
-        return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
-      });
-  }, [tickets, filterStatus, filterCategory, searchQuery, sortOrder]);
+  const totalTickets = ticketsQuery.data?.count ?? 0;
+  const firstTicketOnPage = totalTickets === 0 ? 0 : (page - 1) * TICKETS_PER_PAGE + 1;
+  const lastTicketOnPage = Math.min(page * TICKETS_PER_PAGE, totalTickets);
 
   const getPriorityBadge = (priority: string) => {
     switch (priority?.toLowerCase()) {
+      case 'urgent':
+        return 'bg-rose-100 text-rose-800 border-rose-300';
       case 'high':
         return 'bg-red-50 text-red-700 border-red-200';
       case 'medium':
@@ -102,6 +113,36 @@ const App: React.FC = () => {
 
   const toggleSort = () => {
     setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    setPage(1);
+  };
+
+  const refreshTickets = async () => {
+    setIsSyncingEmail(true);
+    setRefreshMessage(null);
+    try {
+      const csrfToken = await getCsrfToken();
+      const result = await apiJson<{ matched: number; created: number; skipped: number; errors: number }>(
+        '/api/email-ingestion/sync/',
+        {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken },
+        },
+      );
+      setPage(1);
+      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      setRefreshMessage(
+        `Mailbox checked: ${result.matched} matched, ${result.created} created, ${result.skipped} duplicate${result.skipped === 1 ? '' : 's'} skipped, ${result.errors} error${result.errors === 1 ? '' : 's'}.`,
+      );
+    } catch (refreshError) {
+      setRefreshMessage(
+        refreshError instanceof Error
+          ? refreshError.message
+          : 'Unable to refresh tickets from the support mailbox.',
+      );
+      await ticketsQuery.refetch();
+    } finally {
+      setIsSyncingEmail(false);
+    }
   };
 
   return (
@@ -132,41 +173,47 @@ const App: React.FC = () => {
               </Link>
               <button
                 type="button"
-                onClick={() => void ticketsQuery.refetch()}
-                disabled={ticketsQuery.isFetching}
+                onClick={() => void refreshTickets()}
+                disabled={ticketsQuery.isFetching || isSyncingEmail}
                 className="inline-flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer disabled:cursor-wait disabled:opacity-60"
-                aria-label={ticketsQuery.isFetching ? 'Refreshing tickets' : 'Refresh tickets'}
+                aria-label={isSyncingEmail ? 'Checking mailbox and refreshing tickets' : 'Refresh tickets'}
               >
-                <svg className={`w-4 h-4 text-slate-500 ${ticketsQuery.isFetching ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 text-slate-500 ${isSyncingEmail || ticketsQuery.isFetching ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Refresh
+                {isSyncingEmail ? 'Checking mail...' : 'Refresh'}
               </button>
             </div>
           </div>
+
+          {refreshMessage && (
+            <p className="mt-3 text-sm text-slate-500" role="status" aria-live="polite">
+              {refreshMessage}
+            </p>
+          )}
 
           {/* Quick Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">
             <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-100">
               <span className="text-xs font-medium text-slate-500">Total Tickets</span>
-              <p className="text-2xl font-bold text-slate-900 mt-1">{tickets.length}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{ticketsQuery.data?.stats.total ?? 0}</p>
             </div>
             <div className="bg-blue-50/50 p-3.5 rounded-xl border border-blue-100/50">
               <span className="text-xs font-medium text-blue-600">Open Tickets</span>
               <p className="text-2xl font-bold text-blue-700 mt-1">
-                {tickets.filter((t) => t.status?.toLowerCase() === 'open').length}
+                {ticketsQuery.data?.stats.open ?? 0}
               </p>
             </div>
             <div className="bg-amber-50/50 p-3.5 rounded-xl border border-amber-100/50">
               <span className="text-xs font-medium text-amber-600">High / Urgent</span>
               <p className="text-2xl font-bold text-amber-700 mt-1">
-                {tickets.filter((t) => ['high', 'urgent'].includes(t.priority?.toLowerCase())).length}
+                {ticketsQuery.data?.stats.high_urgent ?? 0}
               </p>
             </div>
             <div className="bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-100/50">
               <span className="text-xs font-medium text-emerald-600">Resolved</span>
               <p className="text-2xl font-bold text-emerald-700 mt-1">
-                {tickets.filter((t) => ['resolved', 'closed'].includes(t.status?.toLowerCase())).length}
+                {ticketsQuery.data?.stats.resolved ?? 0}
               </p>
             </div>
           </div>
@@ -186,7 +233,10 @@ const App: React.FC = () => {
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
                   placeholder="Search ticket #, subject, or email..."
                   className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
                 />
@@ -221,7 +271,10 @@ const App: React.FC = () => {
                 {(['all', 'open', 'resolved', 'closed'] as const).map((st) => (
                   <button
                     key={st}
-                    onClick={() => setFilterStatus(st)}
+                    onClick={() => {
+                      setFilterStatus(st);
+                      setPage(1);
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer capitalize ${
                       filterStatus === st
                         ? 'bg-blue-600 text-white shadow-sm'
@@ -246,7 +299,10 @@ const App: React.FC = () => {
                 ).map((cat) => (
                   <button
                     key={cat.id}
-                    onClick={() => setFilterCategory(cat.id)}
+                    onClick={() => {
+                      setFilterCategory(cat.id);
+                      setPage(1);
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
                       filterCategory === cat.id
                         ? 'bg-indigo-600 text-white shadow-sm'
@@ -254,6 +310,30 @@ const App: React.FC = () => {
                     }`}
                   >
                     {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Filter by priority */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+                <span className="text-xs font-medium text-slate-400 mr-1">Priority:</span>
+                {([
+                  { id: 'all', label: 'All Priorities' },
+                  { id: 'high-urgent', label: 'High / Urgent' },
+                ] as const).map((priority) => (
+                  <button
+                    key={priority.id}
+                    onClick={() => {
+                      setFilterPriority(priority.id);
+                      setPage(1);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                      filterPriority === priority.id
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {priority.label}
                   </button>
                 ))}
               </div>
@@ -286,7 +366,7 @@ const App: React.FC = () => {
               </svg>
               <p className="text-base font-medium text-slate-700">No tickets found</p>
               <p className="text-xs text-slate-400 mt-1">
-                {searchQuery || filterStatus !== 'all' || filterCategory !== 'all'
+                {searchQuery || filterStatus !== 'all' || filterCategory !== 'all' || filterPriority !== 'all'
                   ? 'Try adjusting your search query, status, or category filter.'
                   : 'New customer support tickets will appear here.'}
               </p>
@@ -369,6 +449,34 @@ const App: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {ticketsQuery.data && totalTickets > 0 && (
+            <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <p className="text-sm text-slate-500" aria-live="polite">
+                Showing {firstTicketOnPage}–{lastTicketOnPage} of {totalTickets} tickets
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={!ticketsQuery.data.previous || ticketsQuery.isFetching}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-slate-500">
+                  Page {page} of {Math.ceil(totalTickets / TICKETS_PER_PAGE)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => current + 1)}
+                  disabled={!ticketsQuery.data.next || ticketsQuery.isFetching}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           )}
         </div>

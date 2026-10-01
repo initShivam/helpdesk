@@ -1,7 +1,7 @@
-import json
-import re
-from urllib import error, request
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, RateLimitError
 
+from helpdesk.ai_privacy import sanitize_prompt
+from helpdesk.openai_errors import is_quota_exhausted
 from django.conf import settings
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -20,20 +20,6 @@ class AIRetryableError(AISuggestionError):
     """Raised for transient provider failures that can succeed on retry."""
 
 
-_PII_PATTERNS = (
-    (re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I), "[email redacted]"),
-    (re.compile(r"\b(?:\+?\d[\d\s().-]{7,}\d)\b"), "[phone redacted]"),
-)
-_PROFANITY = re.compile(r"\b(?:fuck|shit|bitch|asshole)\b", re.I)
-
-
-def sanitize_prompt(value: str) -> str:
-    sanitized = value
-    for pattern, replacement in _PII_PATTERNS:
-        sanitized = pattern.sub(replacement, sanitized)
-    return _PROFANITY.sub("[language removed]", sanitized)
-
-
 def build_prompt(ticket, messages: list, context: list[RetrievedChunk]) -> str:
     conversation = "\n".join(
         f"{message.message_type}: {message.body}" for message in messages
@@ -42,19 +28,24 @@ def build_prompt(ticket, messages: list, context: list[RetrievedChunk]) -> str:
         f"Reference: {item.title}\n{item.content}" for item in context
     ) or "No knowledge-base reference matched this ticket."
     return sanitize_prompt(
-        "You are a professional helpdesk agent. Draft a concise, empathetic reply "
-        "that directly addresses the customer. Do not invent policy. If the "
-        "references do not answer the question, say the issue will be reviewed.\n\n"
+        "You are a professional helpdesk agent writing a message that will be sent "
+        "directly to the customer. Write the actual reply in the first person as the "
+        "support agent: greet or acknowledge the customer, address their specific "
+        "question or issue, and give a useful next step. Do not summarize the ticket, "
+        "describe the conversation, or write phrases such as 'The customer reported'. "
+        "Do not invent policy or claim an action has been completed. If the references "
+        "do not answer the question, tell the customer you will review it and follow up. "
+        "Return only the customer-facing reply.\n\n"
         f"Ticket subject: {ticket.subject}\nConversation:\n{conversation}\n\n"
         f"Knowledge base:\n{references}"
     )
 
 
-def generate_with_gemini(prompt: str) -> tuple[str, dict]:
-    api_key = getattr(settings, "GEMINI_API_KEY", "")
+def generate_with_openai(prompt: str) -> tuple[str, dict]:
+    api_key = getattr(settings, "OPENAI_API_KEY", "")
     if not api_key:
-        raise AIConfigurationError("GEMINI_API_KEY is not configured. Add it to the root .env file and restart Django.")
-    return _generate_with_gemini(prompt, api_key)
+        raise AIConfigurationError("OPENAI_API_KEY is not configured. Add it to the environment and restart Django.")
+    return _generate_with_openai(prompt, api_key)
 
 
 @retry(
@@ -63,43 +54,41 @@ def generate_with_gemini(prompt: str) -> tuple[str, dict]:
     retry=retry_if_exception_type(AIRetryableError),
     reraise=True,
 )
-def _generate_with_gemini(prompt: str, api_key: str) -> tuple[str, dict]:
-    model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
-    endpoint = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        f"?key={api_key}"
-    )
-    payload = json.dumps(
-        {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500},
-        }
-    ).encode("utf-8")
-    req = request.Request(
-        endpoint,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+def _generate_with_openai(prompt: str, api_key: str) -> tuple[str, dict]:
+    model = getattr(settings, "OPENAI_MODEL", "gpt-6-luna")
+    client = OpenAI(
+        api_key=api_key,
+        timeout=getattr(settings, "AI_SUGGESTION_TIMEOUT", 30),
+        max_retries=0,
     )
     try:
-        with request.urlopen(req, timeout=getattr(settings, "AI_SUGGESTION_TIMEOUT", 30)) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except error.HTTPError as exc:
-        if exc.code == 429 or exc.code >= 500:
-            raise AIRetryableError(f"Gemini temporarily unavailable (HTTP {exc.code}).") from exc
+        response = client.responses.create(
+            model=model,
+            input=prompt,
+            max_output_tokens=500,
+            reasoning={"effort": "none"},
+            store=False,
+        )
+    except RateLimitError as exc:
+        if is_quota_exhausted(exc):
+            raise AIConfigurationError(
+                "OpenAI API credits are exhausted. Add credits or update billing to continue."
+            ) from exc
+        raise AIRetryableError("OpenAI rate limit reached; retry after a short delay.") from exc
+    except (APITimeoutError, APIConnectionError) as exc:
+        raise AIRetryableError("OpenAI request failed temporarily.") from exc
+    except APIStatusError as exc:
+        if exc.status_code >= 500:
+            raise AIRetryableError(f"OpenAI temporarily unavailable (HTTP {exc.status_code}).") from exc
         raise AIConfigurationError(
-            f"Gemini rejected the request (HTTP {exc.code}); check the API key, model, and quota."
+            f"OpenAI rejected the request (HTTP {exc.status_code}); check API configuration, model access, and quota."
         ) from exc
-    except (error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise AIRetryableError("Gemini request failed temporarily.") from exc
 
-    try:
-        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except (KeyError, IndexError, TypeError) as exc:
-        raise AISuggestionError("Gemini returned no usable suggestion.") from exc
+    text = (response.output_text or "").strip()
     if not text:
-        raise AISuggestionError("Gemini returned an empty suggestion.")
-    return text, data.get("usageMetadata", {})
+        raise AISuggestionError("OpenAI returned no usable text output.")
+    usage = response.usage.model_dump() if response.usage else {}
+    return text, usage
 
 
 def build_classification_prompt(ticket, messages: list | None = None) -> str:
@@ -140,7 +129,7 @@ def build_classification_prompt(ticket, messages: list | None = None) -> str:
 
 
 def parse_classification_response(raw_text: str) -> str:
-    """Parse Gemini's raw output and normalize to a valid category choice."""
+    """Parse the model's raw output and normalize to a valid category choice."""
     text = raw_text.strip().lower()
     for cat in ("technical", "refund", "general"):
         if cat in text:

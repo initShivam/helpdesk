@@ -9,7 +9,7 @@ The Blueprint creates resources; it does not attach to an existing Render deploy
 1. Push this repository to a Git provider connected to Render.
 2. In Render, create a Blueprint from the repository and review every proposed service before confirming resource creation. The app, workers, Postgres, and Redis are configured for Singapore. Confirm compute/database plans in the dashboard.
 3. For the prompted `DJANGO_ALLOWED_HOSTS`, provide the API service hostname, e.g. `helpdesk-api.onrender.com` (and any custom API hostname). For `FRONTEND_URL`, use the exact frontend origin, e.g. `https://helpdesk-frontend.onrender.com`. For `VITE_API_BASE_URL`, use the API's full HTTPS origin, e.g. `https://helpdesk-api.onrender.com`.
-4. Supply the Gemini key, Gmail IMAP username/app password, and an S3-compatible private bucket name, region, access key, and secret key in Render's secret fields. For AWS S3 leave `AWS_S3_ENDPOINT_URL` blank; for R2 or another S3-compatible service enter its endpoint URL. Create the bucket first and configure private access with server-side encryption and a narrowly scoped service credential.
+4. Supply the OpenAI API key for text generation, an Ollama service URL reachable from Render, Gmail IMAP username/app password, and an S3-compatible private bucket name, region, access key, and secret key. For AWS S3 leave `AWS_S3_ENDPOINT_URL` blank; for R2 or another S3-compatible service enter its endpoint URL. Create the bucket first and configure private access with server-side encryption and a narrowly scoped service credential.
 5. Confirm the frontend and backend URLs are correct, then deploy. The API runs migrations before deploy and collects static files when starting.
 6. Create the first administrator using the Render Shell for `helpdesk-api`: `python manage.py createsuperuser`.
 
@@ -25,6 +25,20 @@ Render prompts for `sync: false` Blueprint variables on initial creation only. T
 - **helpdesk-redis**: persistent Render Key Value for Celery broker/results. Keep it in the same region as the app and database.
 
 Render Blueprints let the worker and API share the database, Redis, secret, and Gmail/AI values through service references; secret values are not stored in this repository. [Blueprint environment variables](https://render.com/docs/blueprint-spec#setting-environment-variables).
+
+## Ollama embeddings
+
+Install Ollama on a machine that can reach the API and worker services, then
+download the model with `ollama pull nomic-embed-text`. Set
+`OLLAMA_BASE_URL` on Render to that Ollama service's reachable HTTP URL. The
+default `http://localhost:11434` is for a backend running on the same machine;
+it does not refer to your workstation from a Render container. Keep the Ollama
+endpoint private and allow access only from the application services.
+
+After deploying the updated backend, run `python manage.py reindex_embeddings`
+from the API service shell. The command updates old OpenAI vectors in place,
+one document or chunk at a time; if Ollama becomes unavailable, rerun the same
+command to continue. No database schema migration is required.
 
 ## Media storage
 

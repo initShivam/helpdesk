@@ -3,13 +3,14 @@ from django.conf import settings
 from django.utils import timezone
 
 from knowledge_base.retrieval import retrieve
+from knowledge_base.embeddings import EmbeddingError
 
 from .ai_service import (
     AISuggestionError,
     build_classification_prompt,
     build_prompt,
     build_summary_prompt,
-    generate_with_gemini,
+    generate_with_openai,
     parse_classification_response,
 )
 from .models import AILog, Ticket, TicketMessage
@@ -20,7 +21,7 @@ def generate_ai_suggestion(ticket_id: int) -> int:
     ticket = Ticket.objects.get(pk=ticket_id)
     log = AILog.objects.create(
         ticket=ticket,
-        model=getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash"),
+        model=getattr(settings, "OPENAI_MODEL", "gpt-6-luna"),
         operation="suggest_reply",
         sanitized_prompt="",
     )
@@ -30,7 +31,7 @@ def generate_ai_suggestion(ticket_id: int) -> int:
         prompt = build_prompt(ticket, messages, context)
         log.sanitized_prompt = prompt
         log.retrieved_document_ids = [item.document_id for item in context]
-        suggestion, usage = generate_with_gemini(prompt)
+        suggestion, usage = generate_with_openai(prompt)
         log.status = "succeeded"
         log.response_text = suggestion
         log.token_usage = usage
@@ -54,7 +55,7 @@ def generate_ai_suggestion(ticket_id: int) -> int:
             ai_log=log,
         )
         return log.id
-    except (AISuggestionError, RuntimeError, Ticket.DoesNotExist) as exc:
+    except (AISuggestionError, EmbeddingError, RuntimeError, Ticket.DoesNotExist) as exc:
         log.status = "failed"
         log.error_message = str(exc)
         log.completed_at = timezone.now()
@@ -64,11 +65,11 @@ def generate_ai_suggestion(ticket_id: int) -> int:
 
 @shared_task
 def classify_ticket(ticket_id: int) -> str:
-    """Classify a ticket using Gemini with few-shot examples and persist the predicted category."""
+    """Classify a ticket using OpenAI with few-shot examples and persist the predicted category."""
     ticket = Ticket.objects.get(pk=ticket_id)
     log = AILog.objects.create(
         ticket=ticket,
-        model=getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash"),
+        model=getattr(settings, "OPENAI_MODEL", "gpt-6-luna"),
         operation="classify",
         sanitized_prompt="",
     )
@@ -76,7 +77,7 @@ def classify_ticket(ticket_id: int) -> str:
         messages = list(ticket.messages.order_by("created_at"))
         prompt = build_classification_prompt(ticket, messages)
         log.sanitized_prompt = prompt
-        response_text, usage = generate_with_gemini(prompt)
+        response_text, usage = generate_with_openai(prompt)
         predicted_category = parse_classification_response(response_text)
         log.status = "succeeded"
         log.response_text = predicted_category
@@ -109,7 +110,7 @@ def summarize_ticket(ticket_id: int) -> str:
     ticket = Ticket.objects.get(pk=ticket_id)
     log = AILog.objects.create(
         ticket=ticket,
-        model=getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash"),
+        model=getattr(settings, "OPENAI_MODEL", "gpt-6-luna"),
         operation="summarize",
         sanitized_prompt="",
     )
@@ -117,7 +118,7 @@ def summarize_ticket(ticket_id: int) -> str:
         messages = list(ticket.messages.order_by("created_at"))
         prompt = build_summary_prompt(ticket, messages)
         log.sanitized_prompt = prompt
-        summary_text, usage = generate_with_gemini(prompt)
+        summary_text, usage = generate_with_openai(prompt)
         log.status = "succeeded"
         log.response_text = summary_text
         log.token_usage = usage

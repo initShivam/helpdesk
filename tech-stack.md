@@ -43,17 +43,20 @@ is sanitized before provider requests, and AI calls are recorded in the
 
 ## AI and retrieval
 
-Gemini provides generation and provider-backed embeddings when configured.
-When Gemini or pgvector is unavailable locally, deterministic JSON embeddings
-provide a development fallback. Docker Compose uses the pgvector PostgreSQL
-image and enables the vector store.
+OpenAI provides ticket classification, summaries, and suggested replies through
+the Responses API. Ollama provides knowledge-base embeddings with
+`nomic-embed-text`, validated at 768 dimensions to match the existing pgvector
+column. The existing deterministic hash embedding remains available only when
+`EMBEDDING_PROVIDER=local` is selected explicitly. Retrieval filters both
+pgvector and JSON vectors by provider-qualified model metadata, so vectors from
+different embedding spaces are never compared.
 
 The AI flow is:
 
 1. Load ticket conversation content.
 2. Sanitize prompt content.
-3. Retrieve relevant knowledge-base chunks.
-4. Send structured context to Gemini.
+3. Retrieve knowledge-base chunks with the matching Ollama embedding model.
+4. Send structured context to OpenAI.
 5. Store the generated reply as an AI draft.
 6. Let an agent edit or accept the draft.
 

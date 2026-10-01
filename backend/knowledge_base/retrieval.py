@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from helpdesk.ai_privacy import sanitize_prompt
 from .embeddings import cosine_similarity, embed_text
 from .models import DocumentChunk
 from .vector_store import search_chunk_vectors
@@ -15,11 +16,11 @@ class RetrievedChunk:
 
 
 def retrieve(query: str, limit: int = 5) -> list[RetrievedChunk]:
-    query_embedding, _ = embed_text(query)
+    query_embedding, model = embed_text(sanitize_prompt(query))
     if not query_embedding:
         return []
 
-    vector_matches = search_chunk_vectors(query_embedding, limit)
+    vector_matches = search_chunk_vectors(query_embedding, limit, model)
     if vector_matches:
         scores = dict(vector_matches)
         chunks = DocumentChunk.objects.filter(
@@ -42,7 +43,10 @@ def retrieve(query: str, limit: int = 5) -> list[RetrievedChunk]:
         )
 
     results = []
-    for chunk in DocumentChunk.objects.filter(document__is_active=True).select_related("document"):
+    for chunk in DocumentChunk.objects.filter(
+        document__is_active=True,
+        embedding_model=model,
+    ).select_related("document"):
         score = cosine_similarity(query_embedding, chunk.embedding)
         if score >= 0.2:
             results.append(

@@ -8,7 +8,7 @@ export interface MeResponse {
 
 export type TicketCategory = 'general' | 'technical' | 'refund';
 export type TicketStatus = 'open' | 'resolved' | 'closed';
-export type TicketPriority = 'low' | 'medium' | 'high';
+export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export interface Ticket {
   id: number;

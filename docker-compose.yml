@@ -41,6 +41,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CELERY_TASK_ALWAYS_EAGER: "False"
       PGVECTOR_ENABLED: "True"
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
     depends_on:
       db:
         condition: service_healthy
@@ -69,6 +70,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CELERY_TASK_ALWAYS_EAGER: "False"
       PGVECTOR_ENABLED: "True"
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
     depends_on:
       db:
         condition: service_healthy
@@ -90,6 +92,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CELERY_TASK_ALWAYS_EAGER: "False"
       PGVECTOR_ENABLED: "True"
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
     depends_on:
       db:
         condition: service_healthy
@@ -105,6 +108,8 @@ services:
       - ./frontend:/app
     env_file:
       - .env
+    environment:
+      VITE_API_PROXY_TARGET: http://web:8000
     ports:
       - "5173:5173"
     depends_on:

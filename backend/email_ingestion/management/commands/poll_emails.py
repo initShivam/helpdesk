@@ -1,8 +1,12 @@
+import os
 import time
+import logging
 
 from django.core.management.base import BaseCommand, CommandError
 
 from email_ingestion.tasks import fetch_emails
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -12,8 +16,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--interval",
             type=int,
-            default=300,
-            help="Seconds to wait between mailbox checks (default: 300).",
+            default=int(os.getenv("EMAIL_POLL_INTERVAL_SECONDS", "60")),
+            help="Seconds to wait between mailbox checks (default: 60).",
         )
         parser.add_argument(
             "--once",
@@ -30,13 +34,14 @@ class Command(BaseCommand):
             try:
                 result = fetch_emails()
             except Exception as exc:
-                self.stderr.write(self.style.ERROR(f"Email fetch failed: {exc}"))
+                logger.exception("mailbox_poll_failed error=%s", exc)
             else:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Email fetch complete: created={result['created']} "
-                        f"skipped={result['skipped']}"
-                    )
+                logger.info(
+                    "mailbox_poll_complete matched=%s created=%s skipped=%s errors=%s",
+                    result["matched"],
+                    result["created"],
+                    result["skipped"],
+                    result["errors"],
                 )
 
             if options["once"]:

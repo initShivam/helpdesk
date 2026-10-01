@@ -8,6 +8,7 @@ urlpatterns = [
     path("health/", health, name="health"),
     path('api/', include('tickets.urls')),
     path('api/auth/', include('accounts.urls')),
+    path('api/email-ingestion/', include('email_ingestion.urls')),
     path('api/agents/', include('accounts.agent_urls')),
     path('api/knowledge-base/', include('knowledge_base.urls')),
     path('', include('django_prometheus.urls')),

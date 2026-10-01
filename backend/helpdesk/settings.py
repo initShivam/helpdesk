@@ -307,14 +307,17 @@ CELERY_TASK_ALWAYS_EAGER = os.getenv(
     'False' if IS_PRODUCTION else 'True',
 ) == 'True'
 CELERY_BEAT_SCHEDULE = {
-    'fetch-emails-every-five-minutes': {
+    'fetch-emails': {
         'task': 'email_ingestion.tasks.fetch_emails',
-        'schedule': 300.0,
+        'schedule': float(os.getenv('EMAIL_POLL_INTERVAL_SECONDS', '60')),
     },
 }
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
-GEMINI_EMBEDDING_MODEL = os.getenv('GEMINI_EMBEDDING_MODEL', 'text-embedding-004')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-6-luna')
+EMBEDDING_PROVIDER = os.getenv('EMBEDDING_PROVIDER', 'ollama').strip().lower()
+OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434').rstrip('/')
+OLLAMA_EMBEDDING_MODEL = os.getenv('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '120'))
 PGVECTOR_ENABLED = os.getenv('PGVECTOR_ENABLED', 'False') == 'True'
 AI_SUGGESTION_TIMEOUT = int(os.getenv('AI_SUGGESTION_TIMEOUT', '30'))

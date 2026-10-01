@@ -49,12 +49,16 @@ services:
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
-      - key: GEMINI_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: GEMINI_MODEL
-        value: gemini-2.0-flash
-      - key: GEMINI_EMBEDDING_MODEL
-        value: text-embedding-004
+      - key: OPENAI_MODEL
+        value: gpt-6-luna
+      - key: EMBEDDING_PROVIDER
+        value: ollama
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: OLLAMA_EMBEDDING_MODEL
+        value: nomic-embed-text
       - key: EMAIL_IMAP_USERNAME
         sync: false
       - key: EMAIL_IMAP_PASSWORD
@@ -127,15 +131,22 @@ services:
           property: connectionString
       - key: PGVECTOR_ENABLED
         value: "True"
-      - key: GEMINI_API_KEY
+      - key: OPENAI_API_KEY
         fromService:
           name: helpdesk-api
           type: web
-          envVarKey: GEMINI_API_KEY
-      - key: GEMINI_MODEL
-        value: gemini-2.0-flash
-      - key: GEMINI_EMBEDDING_MODEL
-        value: text-embedding-004
+          envVarKey: OPENAI_API_KEY
+      - key: OPENAI_MODEL
+        value: gpt-6-luna
+      - key: EMBEDDING_PROVIDER
+        value: ollama
+      - key: OLLAMA_BASE_URL
+        fromService:
+          name: helpdesk-api
+          type: web
+          envVarKey: OLLAMA_BASE_URL
+      - key: OLLAMA_EMBEDDING_MODEL
+        value: nomic-embed-text
       - key: EMAIL_IMAP_USERNAME
         fromService:
           name: helpdesk-api
