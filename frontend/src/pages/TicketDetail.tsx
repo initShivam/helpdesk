@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useContext, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiJson, API_BASE_URL, getCsrfToken } from '../api';
+import { AuthContext } from '../context/AuthContext';
 
 interface Ticket {
   id: number;
@@ -46,7 +47,9 @@ const getResponseError = async (response: Response, fallback: string) => {
 
 const TicketDetail: React.FC = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const auth = useContext(AuthContext);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -97,6 +100,29 @@ const TicketDetail: React.FC = () => {
       await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
     } catch (reason: unknown) {
       setActionError(reason instanceof Error ? reason.message : 'Ticket update failed.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteTicket = async () => {
+    if (!id || !window.confirm(`Delete ticket ${ticket?.ticket_number}? This cannot be undone.`)) return;
+    setActionError(null);
+    setIsSaving(true);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': csrfToken },
+      });
+      if (!response.ok) {
+        throw new Error(await getResponseError(response, 'Unable to delete this ticket.'));
+      }
+      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      navigate('/');
+    } catch (reason: unknown) {
+      setActionError(reason instanceof Error ? reason.message : 'Ticket deletion failed.');
     } finally {
       setIsSaving(false);
     }
@@ -291,6 +317,16 @@ const TicketDetail: React.FC = () => {
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
               >
                 Reopen ticket
+              </button>
+            )}
+            {auth?.user?.role === 'ADMIN' && (
+              <button
+                type="button"
+                onClick={deleteTicket}
+                disabled={isSaving}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
+              >
+                {isSaving ? 'Deleting...' : 'Delete ticket'}
               </button>
             )}
 
