@@ -1,6 +1,11 @@
 from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction
+from django.core.exceptions import ValidationError
+from celery import current_app
+from datetime import timedelta
+import logging
 
 from knowledge_base.retrieval import retrieve
 from knowledge_base.embeddings import EmbeddingError
@@ -13,7 +18,71 @@ from .ai_service import (
     generate_with_openai,
     parse_classification_response,
 )
-from .models import AILog, Ticket, TicketMessage
+from .models import AILog, Ticket, TicketMessage, ResolutionNotification
+
+logger = logging.getLogger(__name__)
+
+
+def enqueue_resolution_notification(notification_id: int) -> None:
+    """Submit work without allowing broker errors to turn a committed ticket update into a 500."""
+    try:
+        send_resolution_notification_task.delay(notification_id)
+    except Exception as exc:
+        logger.warning("Resolution notification enqueue failed (notification_id=%s, error_type=%s)", notification_id, type(exc).__name__)
+        ResolutionNotification.objects.filter(pk=notification_id, delivery_status="pending").update(
+            delivery_status="failed", error_detail="queue_unavailable", next_attempt_at=None
+        )
+
+
+@shared_task(bind=True, max_retries=2)
+def send_resolution_notification_task(self, notification_id: int) -> str:
+    """Send a tracked notification with a bounded, sanitized retry policy."""
+    try:
+        with transaction.atomic():
+            notification = ResolutionNotification.objects.select_for_update().get(pk=notification_id)
+            if notification.delivery_status in ("sent", "sending"):
+                return notification.delivery_status
+            if notification.attempt_count >= ResolutionNotification.MAX_ATTEMPTS:
+                notification.delivery_status = "failed"
+                notification.error_detail = "retry_limit_reached"
+                notification.save(update_fields=["delivery_status", "error_detail"])
+                return "failed"
+            notification.delivery_status = "sending"
+            notification.attempt_count += 1
+            notification.last_attempt_at = timezone.now()
+            notification.next_attempt_at = None
+            notification.error_detail = ""
+            notification.save(update_fields=["delivery_status", "attempt_count", "last_attempt_at", "next_attempt_at", "error_detail"])
+        from .services.outbound_email import send_resolution_notification
+        send_resolution_notification(notification)
+        notification.delivery_status = "sent"
+        notification.sent_at = timezone.now()
+        notification.error_detail = ""
+        notification.save(update_fields=["delivery_status", "sent_at", "error_detail"])
+        return "sent"
+    except Exception as exc:
+        # Store exception classes only. SMTP exception text may contain addresses or server details.
+        permanent_error = isinstance(exc, (ValueError, ValidationError))
+        safe_error = "invalid_address" if permanent_error else "smtp_delivery_failed"
+        logger.warning("Resolution notification delivery failed (notification_id=%s, error_type=%s)", notification_id, type(exc).__name__)
+        notification = ResolutionNotification.objects.filter(pk=notification_id).first()
+        if not notification:
+            raise
+        # In local eager mode a Celery retry executes inside the request callback;
+        # record failure for a user initiated retry instead of bubbling SMTP errors
+        # back after the ticket transaction has already committed.
+        if permanent_error or notification.attempt_count >= ResolutionNotification.MAX_ATTEMPTS or current_app.conf.task_always_eager:
+            notification.delivery_status = "failed"
+            notification.next_attempt_at = None
+            notification.error_detail = safe_error
+            notification.save(update_fields=["delivery_status", "next_attempt_at", "error_detail"])
+            return "failed"
+        delay = 60 * (2 ** (notification.attempt_count - 1))
+        notification.delivery_status = "pending"
+        notification.next_attempt_at = timezone.now() + timedelta(seconds=delay)
+        notification.error_detail = safe_error
+        notification.save(update_fields=["delivery_status", "next_attempt_at", "error_detail"])
+        raise self.retry(exc=exc, countdown=delay)
 
 
 @shared_task

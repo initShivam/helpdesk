@@ -19,6 +19,27 @@ if IS_PRODUCTION and (not _secret_key or _secret_key == 'replace-this-with-a-sec
     raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set to a unique secret in production.')
 SECRET_KEY = _secret_key or 'replace-this-with-a-secure-key'
 
+# Outbound support notifications use the configured Gmail mailbox by default.
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_SMTP_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_SMTP_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_SMTP_USE_TLS', 'True').lower() == 'true'
+EMAIL_USE_SSL = os.getenv('EMAIL_SMTP_USE_SSL', 'False').lower() == 'true'
+EMAIL_HOST_USER = (
+    os.getenv('EMAIL_SMTP_USERNAME', '').strip()
+    or os.getenv('EMAIL_IMAP_USERNAME', '').strip()
+)
+EMAIL_HOST_PASSWORD = (
+    os.getenv('EMAIL_SMTP_APP_PASSWORD', '').strip()
+    or os.getenv('EMAIL_IMAP_PASSWORD', '').strip()
+)
+DEFAULT_FROM_EMAIL = (
+    os.getenv('EMAIL_FROM_ADDRESS', '').strip()
+    or EMAIL_HOST_USER
+    or 'helpdesk@example.com'
+)
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_SMTP_TIMEOUT_SECONDS', '15'))
+
 # Keep production safe by default and refuse an explicit unsafe override.
 DEBUG = os.getenv('DJANGO_DEBUG', 'False' if IS_PRODUCTION else 'True').lower() == 'true'
 if IS_PRODUCTION and DEBUG:

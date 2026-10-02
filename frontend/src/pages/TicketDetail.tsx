@@ -52,6 +52,7 @@ const TicketDetail: React.FC = () => {
   const auth = useContext(AuthContext);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
+  const [resolutionNote, setResolutionNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isClassifying, setIsClassifying] = useState(false);
@@ -71,6 +72,12 @@ const TicketDetail: React.FC = () => {
       return Array.isArray(data) ? data : data.results;
     },
     enabled: Boolean(id),
+  });
+  const notificationQuery = useQuery({
+    queryKey: ['resolution-notification', id],
+    queryFn: () => apiJson<{ status: string; attempt_count: number; max_attempts: number; sent_at: string | null }>(`/api/tickets/${id}/resolution-notification/`),
+    enabled: Boolean(id) && ticketQuery.data?.status === 'resolved',
+    refetchInterval: (query) => ['pending', 'sending'].includes(query.state.data?.status ?? '') ? 2000 : false,
   });
   const ticket = ticketQuery.data ?? null;
   const messages = messagesQuery.data ?? [];
@@ -97,16 +104,33 @@ const TicketDetail: React.FC = () => {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken,
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(status === 'resolved' ? { status, resolution_note: resolutionNote.trim() } : { status }),
       });
       if (!response.ok) {
         throw new Error('Unable to update the ticket status.');
       }
       await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+      await queryClient.invalidateQueries({ queryKey: ['resolution-notification', id] });
+      setResolutionNote('');
     } catch (reason: unknown) {
       setActionError(reason instanceof Error ? reason.message : 'Ticket update failed.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const retryResolutionNotification = async () => {
+    if (!id) return;
+    setActionError(null);
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/retry-resolution-notification/`, {
+        method: 'POST', credentials: 'include', headers: { 'X-CSRFToken': csrfToken },
+      });
+      if (!response.ok) throw new Error(await getResponseError(response, 'Unable to retry the notification.'));
+      await queryClient.invalidateQueries({ queryKey: ['resolution-notification', id] });
+    } catch (reason: unknown) {
+      setActionError(reason instanceof Error ? reason.message : 'Unable to retry the notification.');
     }
   };
 
@@ -359,6 +383,20 @@ const TicketDetail: React.FC = () => {
               {isSummarizing ? 'Summarizing...' : 'Summarize with AI'}
             </button>
           </div>
+          {ticket.status === 'open' && (
+            <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="resolution-note">
+              Resolution details (optional)
+              <textarea id="resolution-note" value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} maxLength={10000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 p-3 font-normal" />
+            </label>
+          )}
+          {ticket.status === 'resolved' && notificationQuery.data && notificationQuery.data.status !== 'not_started' && (
+            <div className="mt-4 text-sm text-slate-700" role="status">
+              Resolution email: <strong className="capitalize">{notificationQuery.data.status}</strong>
+              {notificationQuery.data.status === 'failed' && notificationQuery.data.attempt_count < notificationQuery.data.max_attempts && (
+                <button type="button" onClick={retryResolutionNotification} className="ml-3 rounded border border-slate-300 px-3 py-1 font-medium hover:bg-slate-50">Retry email</button>
+              )}
+            </div>
+          )}
           {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
           {suggestionError && <p className="mt-3 text-sm text-red-600">{suggestionError}</p>}
           {ticket.ai_summary && (

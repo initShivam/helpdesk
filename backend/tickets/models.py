@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
+import uuid
 
 class Ticket(models.Model):
     STATUS_CHOICES = [
@@ -77,6 +78,29 @@ class TicketMessage(models.Model):
 
     def __str__(self):
         return f"Message {self.id} on {self.ticket.ticket_number}"
+
+
+class ResolutionNotification(models.Model):
+    STATUS_CHOICES = [("pending", "Pending"), ("sending", "Sending"), ("sent", "Sent"), ("failed", "Failed")]
+    MAX_ATTEMPTS = 3
+
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="resolution_notifications")
+    recipient_email = models.EmailField()
+    subject = models.CharField(max_length=255)
+    issue_summary = models.TextField(blank=True)
+    resolution_note = models.TextField(blank=True)
+    notification_type = models.CharField(max_length=32, default="resolution")
+    delivery_status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    error_detail = models.CharField(max_length=160, blank=True)
+    event_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 class AILog(models.Model):

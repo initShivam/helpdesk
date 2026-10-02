@@ -78,17 +78,17 @@ class TicketAPIPermissionsTest(TestCase):
 
         filtered = self.client.get("/api/tickets/?status=resolved&category=technical")
         self.assertEqual(filtered.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(filtered.data), 1)
-        self.assertEqual(filtered.data[0]["ticket_number"], "TCKT-LOW")
+        self.assertEqual(len(filtered.data["results"]), 1)
+        self.assertEqual(filtered.data["results"][0]["ticket_number"], "TCKT-LOW")
 
         searched = self.client.get("/api/tickets/?search=Printer")
         self.assertEqual(searched.status_code, status.HTTP_200_OK)
-        self.assertEqual(searched.data[0]["ticket_number"], "TCKT-LOW")
+        self.assertEqual(searched.data["results"][0]["ticket_number"], "TCKT-LOW")
 
         ordered = self.client.get("/api/tickets/?ordering=created_at")
         self.assertEqual(ordered.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            {ticket["ticket_number"] for ticket in ordered.data},
+            {ticket["ticket_number"] for ticket in ordered.data["results"]},
             {"TCKT-001", "TCKT-LOW"},
         )
 

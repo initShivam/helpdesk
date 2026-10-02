@@ -1,0 +1,11 @@
+Hello,
+
+Your support ticket #{{ notification.ticket.ticket_number }} has been marked as resolved by our support team.
+
+Issue: {{ notification.issue_summary }}
+{% if notification.resolution_note %}Resolution: {{ notification.resolution_note }}{% else %}Resolution details were not provided.{% endif %}
+
+If you are still experiencing this issue, please reply to this email and our support team will assist you.
+
+Thank you,
+Helpdesk Support Team

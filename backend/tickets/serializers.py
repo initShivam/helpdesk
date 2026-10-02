@@ -4,6 +4,7 @@ from email_ingestion.serializers import EmailAttachmentSerializer
 
 class TicketSerializer(serializers.ModelSerializer):
     attachments = serializers.SerializerMethodField()
+    resolution_note = serializers.CharField(required=False, allow_blank=True, max_length=10000, write_only=True)
 
     def get_attachments(self, obj):
         attachments = EmailAttachmentSerializer(
@@ -42,14 +43,20 @@ class TicketSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "attachments",
+            "resolution_note",
         ]
         read_only_fields = ["id", "created_by", "created_at", "updated_at"]
 
     def create(self, validated_data):
+        validated_data.pop("resolution_note", None)
         request = self.context.get("request")
         if request and hasattr(request, "user") and request.user.is_authenticated:
             validated_data["created_by"] = request.user
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("resolution_note", None)
+        return super().update(instance, validated_data)
 
 
 class TicketMessageSerializer(serializers.ModelSerializer):

@@ -11,12 +11,13 @@ from rest_framework.exceptions import NotAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
 from datetime import timedelta
 from django.utils import timezone
+from django.db import transaction
 from rest_framework.views import APIView
-from .models import Ticket, TicketMessage, AILog
+from .models import Ticket, TicketMessage, AILog, ResolutionNotification
 from .serializers import TicketSerializer, TicketMessageSerializer
 from .auth import SessionAuthenticationWith401
 from .ai import enrich_ticket
-from .tasks import generate_ai_suggestion, classify_ticket, summarize_ticket
+from .tasks import generate_ai_suggestion, classify_ticket, summarize_ticket, enqueue_resolution_notification
 from .pagination import TicketPagination
 
 
@@ -89,6 +90,64 @@ class TicketViewSet(viewsets.ModelViewSet):
     search_fields = ["ticket_number", "subject", "requester_email"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = Ticket.objects.all()
+        if getattr(self, "action", None) in {"update", "partial_update"}:
+            queryset = queryset.select_for_update()
+        return queryset
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        previous_status = instance.status
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        resolution_note = serializer.validated_data.get("resolution_note", "").strip()
+        self.perform_update(serializer)
+        ticket = serializer.instance
+        if previous_status == "open" and ticket.status == "resolved":
+            summary = (ticket.ai_summary or "").strip() or ticket.subject
+            notification = ResolutionNotification.objects.create(
+                ticket=ticket,
+                recipient_email=ticket.requester_email,
+                subject=f"Your Support Ticket #{ticket.ticket_number} Has Been Resolved",
+                issue_summary=summary,
+                resolution_note=resolution_note,
+            )
+            transaction.on_commit(lambda notification_id=notification.pk: enqueue_resolution_notification(notification_id))
+        if getattr(instance, "_prefetched_objects_cache", None):
+            instance._prefetched_objects_cache = {}
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="resolution-notification")
+    def resolution_notification(self, request, pk=None):
+        notification = self.get_object().resolution_notifications.first()
+        if not notification:
+            return Response({"status": "not_started", "attempt_count": 0, "max_attempts": ResolutionNotification.MAX_ATTEMPTS})
+        return Response({
+            "status": notification.delivery_status,
+            "attempt_count": notification.attempt_count,
+            "max_attempts": ResolutionNotification.MAX_ATTEMPTS,
+            "sent_at": notification.sent_at,
+        })
+
+    @action(detail=True, methods=["post"], url_path="retry-resolution-notification")
+    def retry_resolution_notification(self, request, pk=None):
+        with transaction.atomic():
+            self.get_object()
+            notification = ResolutionNotification.objects.select_for_update().filter(ticket_id=pk).first()
+            if not notification or notification.delivery_status != "failed":
+                return Response({"detail": "There is no failed resolution notification to retry."}, status=status.HTTP_409_CONFLICT)
+            if notification.attempt_count >= ResolutionNotification.MAX_ATTEMPTS:
+                return Response({"detail": "The notification has reached its retry limit."}, status=status.HTTP_409_CONFLICT)
+            notification.delivery_status = "pending"
+            notification.next_attempt_at = timezone.now()
+            notification.error_detail = ""
+            notification.save(update_fields=["delivery_status", "next_attempt_at", "error_detail"])
+            transaction.on_commit(lambda notification_id=notification.pk: enqueue_resolution_notification(notification_id))
+        return Response({"status": "pending"}, status=status.HTTP_202_ACCEPTED)
 
     @property
     def ai_throttle_scope(self):
