@@ -18,7 +18,7 @@ from .ai_service import (
     generate_with_openai,
     parse_classification_response,
 )
-from .models import AILog, Ticket, TicketMessage, ResolutionNotification
+from .models import AILog, Ticket, TicketMessage, ResolutionNotification, WhatsAppNotification
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,74 @@ def enqueue_resolution_notification(notification_id: int) -> None:
         ResolutionNotification.objects.filter(pk=notification_id, delivery_status="pending").update(
             delivery_status="failed", error_detail="queue_unavailable", next_attempt_at=None
         )
+
+
+def enqueue_whatsapp_notification(notification_id: int) -> None:
+    try:
+        send_whatsapp_notification_task.delay(notification_id)
+    except Exception as exc:
+        logger.warning("WhatsApp enqueue failed (notification_id=%s, error_type=%s)", notification_id, type(exc).__name__)
+        WhatsAppNotification.objects.filter(pk=notification_id, status="pending").update(
+            status="failed", error_code="queue_unavailable", failed_at=timezone.now())
+
+
+@shared_task(bind=True, max_retries=2)
+def send_whatsapp_notification_task(self, notification_id: int) -> str:
+    with transaction.atomic():
+        notification = WhatsAppNotification.objects.select_for_update().select_related("ticket").get(pk=notification_id)
+        if notification.status in ("sent", "delivered", "read", "queued"):
+            return notification.status
+        if notification.attempt_count >= WhatsAppNotification.MAX_ATTEMPTS:
+            notification.status = "failed"
+            notification.error_code = "retry_limit_reached"
+            notification.failed_at = timezone.now()
+            notification.save(update_fields=["status", "error_code", "failed_at"])
+            return "failed"
+        notification.status = "queued"
+        notification.attempt_count += 1
+        notification.last_attempt_at = timezone.now()
+        notification.error_code = ""
+        notification.error_detail = ""
+        notification.save(update_fields=["status", "attempt_count", "last_attempt_at", "error_code", "error_detail"])
+    if (not notification.customer or not notification.customer.whatsapp_consent or
+            not notification.customer.whatsapp_number):
+        notification.status = "failed"
+        notification.error_code = "consent_required"
+        notification.failed_at = timezone.now()
+        notification.save(update_fields=["status", "error_code", "failed_at"])
+        return "failed"
+    from .services.whatsapp_service import normalize_whatsapp_number
+    try:
+        current_number = normalize_whatsapp_number(notification.customer.whatsapp_number)
+    except ValueError:
+        current_number = ""
+    if current_number != notification.recipient_number:
+        notification.status = "failed"
+        notification.error_code = "contact_changed"
+        notification.failed_at = timezone.now()
+        notification.save(update_fields=["status", "error_code", "failed_at"])
+        return "failed"
+    from .services.whatsapp_service import send_whatsapp_notification
+    result = send_whatsapp_notification(notification)
+    if result.success:
+        notification.status = "sent"
+        notification.twilio_message_sid = result.message_sid
+        notification.sent_at = timezone.now()
+        notification.error_code = ""
+        notification.save(update_fields=["status", "twilio_message_sid", "sent_at", "error_code"])
+        return "sent"
+    notification.error_code = result.error_code[:40]
+    notification.error_detail = result.error_detail[:255]
+    if result.transient and notification.attempt_count < WhatsAppNotification.MAX_ATTEMPTS and not current_app.conf.task_always_eager:
+        from datetime import timedelta
+        delay = 60 * (2 ** (notification.attempt_count - 1))
+        notification.status = "pending"
+        notification.save(update_fields=["status", "error_code", "error_detail"])
+        raise self.retry(countdown=delay)
+    notification.status = "failed"
+    notification.failed_at = timezone.now()
+    notification.save(update_fields=["status", "error_code", "error_detail", "failed_at"])
+    return "failed"
 
 
 @shared_task(bind=True, max_retries=2)

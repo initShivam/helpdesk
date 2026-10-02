@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
+import json
 import uuid
 
 class Ticket(models.Model):
@@ -101,6 +102,42 @@ class ResolutionNotification(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class CustomerContact(models.Model):
+    """Opt-in WhatsApp contact details keyed to the ticket requester email."""
+    email = models.EmailField(unique=True)
+    whatsapp_number = models.CharField(max_length=16, blank=True)
+    whatsapp_consent = models.BooleanField(default=False)
+    whatsapp_consent_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class WhatsAppNotification(models.Model):
+    STATUS_CHOICES = [(value, value.title()) for value in
+                      ("pending", "queued", "sent", "delivered", "read", "failed")]
+    MAX_ATTEMPTS = 3
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="whatsapp_notifications")
+    customer = models.ForeignKey(CustomerContact, on_delete=models.SET_NULL, null=True, related_name="whatsapp_notifications")
+    recipient_number = models.CharField(max_length=16)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    twilio_message_sid = models.CharField(max_length=64, blank=True, db_index=True)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    error_code = models.CharField(max_length=40, blank=True)
+    error_detail = models.CharField(max_length=255, blank=True)
+    event_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    failed_at = models.DateTimeField(null=True, blank=True)
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def content_variables(self):
+        return json.dumps({"1": self.ticket.ticket_number, "2": self.ticket.subject})
 
 
 class AILog(models.Model):

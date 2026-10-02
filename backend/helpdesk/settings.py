@@ -40,6 +40,15 @@ DEFAULT_FROM_EMAIL = (
 )
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_SMTP_TIMEOUT_SECONDS', '15'))
 
+# Twilio WhatsApp is opt-in and independent of SMTP/IMAP settings.
+WHATSAPP_ENABLED = os.getenv('WHATSAPP_ENABLED', 'False').lower() == 'true'
+WHATSAPP_PROVIDER = os.getenv('WHATSAPP_PROVIDER', 'twilio').strip().lower()
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
+TWILIO_WHATSAPP_FROM = os.getenv('TWILIO_WHATSAPP_FROM', '').strip()
+WHATSAPP_TEMPLATE_SID = os.getenv('WHATSAPP_TEMPLATE_SID', '').strip()
+TWILIO_STATUS_CALLBACK_URL = os.getenv('TWILIO_STATUS_CALLBACK_URL', '').strip()
+
 # Keep production safe by default and refuse an explicit unsafe override.
 DEBUG = os.getenv('DJANGO_DEBUG', 'False' if IS_PRODUCTION else 'True').lower() == 'true'
 if IS_PRODUCTION and DEBUG:
@@ -336,7 +345,10 @@ CELERY_BEAT_SCHEDULE = {
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-6-luna')
-EMBEDDING_PROVIDER = os.getenv('EMBEDDING_PROVIDER', 'ollama').strip().lower()
+EMBEDDING_PROVIDER = os.getenv(
+    'EMBEDDING_PROVIDER',
+    'ollama' if IS_PRODUCTION else 'local',
+).strip().lower()
 OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434').rstrip('/')
 OLLAMA_EMBEDDING_MODEL = os.getenv('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '120'))

@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested import routers
-from .views import TicketViewSet, TicketMessageViewSet, AnalyticsOverviewView
+from .views import TicketViewSet, TicketMessageViewSet, AnalyticsOverviewView, TwilioWhatsAppWebhookView
 
 # Primary router for tickets
 router = DefaultRouter()
@@ -12,6 +12,7 @@ tickets_router = routers.NestedDefaultRouter(router, r'tickets', lookup='ticket'
 tickets_router.register(r'messages', TicketMessageViewSet, basename='ticket-message')
 
 urlpatterns = [
+    path('whatsapp/webhook/', TwilioWhatsAppWebhookView.as_view(), name='whatsapp-webhook'),
     path('analytics/overview', AnalyticsOverviewView.as_view(), name='analytics-overview-no-slash'),
     path('analytics/overview/', AnalyticsOverviewView.as_view(), name='analytics-overview'),
 ] + router.urls + tickets_router.urls

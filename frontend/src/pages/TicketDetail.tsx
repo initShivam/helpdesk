@@ -59,6 +59,9 @@ const TicketDetail: React.FC = () => {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [suggestionDraft, setSuggestionDraft] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [whatsappConsent, setWhatsappConsent] = useState(false);
+  const [retryingWhatsAppId, setRetryingWhatsAppId] = useState<number | null>(null);
 
   const ticketQuery = useQuery({
     queryKey: ['ticket', id],
@@ -78,6 +81,12 @@ const TicketDetail: React.FC = () => {
     queryFn: () => apiJson<{ status: string; attempt_count: number; max_attempts: number; sent_at: string | null }>(`/api/tickets/${id}/resolution-notification/`),
     enabled: Boolean(id) && ticketQuery.data?.status === 'resolved',
     refetchInterval: (query) => ['pending', 'sending'].includes(query.state.data?.status ?? '') ? 2000 : false,
+  });
+  const whatsappQuery = useQuery({
+    queryKey: ['whatsapp-notifications', id],
+    queryFn: () => apiJson<{ contact: { number: string; consent: boolean }; notifications: Array<{ id: number; status: string; attempt_count: number; max_attempts: number; last_attempt_at: string | null; delivered_at: string | null; error_code: string; error_detail: string }> }>(`/api/tickets/${id}/whatsapp-notifications/`),
+    enabled: Boolean(id),
+    refetchInterval: (query) => query.state.data?.notifications.some((n) => ['pending', 'queued', 'sent'].includes(n.status)) ? 5000 : false,
   });
   const ticket = ticketQuery.data ?? null;
   const messages = messagesQuery.data ?? [];
@@ -107,7 +116,7 @@ const TicketDetail: React.FC = () => {
         body: JSON.stringify(status === 'resolved' ? { status, resolution_note: resolutionNote.trim() } : { status }),
       });
       if (!response.ok) {
-        throw new Error('Unable to update the ticket status.');
+        throw new Error(await getResponseError(response, 'Unable to update the ticket status.'));
       }
       await queryClient.invalidateQueries({ queryKey: ['ticket', id] });
       await queryClient.invalidateQueries({ queryKey: ['resolution-notification', id] });
@@ -131,6 +140,40 @@ const TicketDetail: React.FC = () => {
       await queryClient.invalidateQueries({ queryKey: ['resolution-notification', id] });
     } catch (reason: unknown) {
       setActionError(reason instanceof Error ? reason.message : 'Unable to retry the notification.');
+    }
+  };
+
+  const saveWhatsAppContact = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!id) return;
+    try {
+      const csrfToken = await getCsrfToken();
+      await apiJson(`/api/tickets/${id}/whatsapp-contact/`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }, body: JSON.stringify({ number: whatsappNumber, consent: whatsappConsent }) });
+      setWhatsappNumber('');
+      await queryClient.invalidateQueries({ queryKey: ['whatsapp-notifications', id] });
+    } catch (reason) { setActionError(reason instanceof Error ? reason.message : 'Unable to save WhatsApp contact.'); }
+  };
+
+  const retryWhatsApp = async (notificationId: number) => {
+    if (!id || retryingWhatsAppId !== null) return;
+    const notification = whatsappQuery.data?.notifications.find((item) => item.id === notificationId);
+    const retryAfterFix = Boolean(notification && notification.attempt_count >= notification.max_attempts);
+    if (retryAfterFix && !window.confirm('The automatic attempts are used up. First fix the Twilio template/sender issue, then start a new manual send attempt?')) return;
+    setActionError(null);
+    setRetryingWhatsAppId(notificationId);
+    try {
+      const csrfToken = await getCsrfToken();
+      await apiJson(`/api/tickets/${id}/retry-whatsapp-notification/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ notification_id: notificationId, retry_after_fix: retryAfterFix }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ['whatsapp-notifications', id] });
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'Unable to retry WhatsApp notification.');
+      await queryClient.invalidateQueries({ queryKey: ['whatsapp-notifications', id] });
+    } finally {
+      setRetryingWhatsAppId(null);
     }
   };
 
@@ -397,6 +440,37 @@ const TicketDetail: React.FC = () => {
               )}
             </div>
           )}
+          <section className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50/50 p-4">
+            <h2 className="font-semibold text-slate-900">WhatsApp contact and notifications</h2>
+            <p className="mt-1 text-sm text-slate-600">Current number: {whatsappQuery.data?.contact.number || 'Not set'} · Consent: {whatsappQuery.data?.contact.consent ? 'Granted' : 'Not granted'}</p>
+            <form onSubmit={saveWhatsAppContact} className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="text-sm">WhatsApp number (include country code)
+                <input value={whatsappNumber} onChange={(event) => setWhatsappNumber(event.target.value)} placeholder="+14155550123" className="mt-1 block rounded border border-slate-300 p-2" />
+              </label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={whatsappConsent} onChange={(event) => setWhatsappConsent(event.target.checked)} /> Customer consent recorded</label>
+              <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white">Save contact</button>
+            </form>
+            <div className="mt-3 space-y-2 text-sm">
+              {(whatsappQuery.data?.notifications ?? []).map((item) => <div key={item.id} className="flex flex-wrap items-center gap-3">
+                <span>WhatsApp: <strong className="capitalize">{item.status}</strong></span>
+                {item.status === 'failed' && item.error_code && <span className="text-red-700">
+                  Reason: {item.error_code.startsWith('twilio_') ? (
+                    <><a className="underline" href="https://www.twilio.com/docs/api/errors" target="_blank" rel="noreferrer">Twilio error {item.error_code.slice('twilio_'.length)}</a>. Check the provider detail below.</>
+                  ) : item.error_code.startsWith('provider_rejected_') ? `Twilio rejected the request (${item.error_code.slice('provider_rejected_'.length)}).` : item.error_code}
+                </span>}
+                {item.status === 'failed' && item.error_detail && <span className="basis-full text-red-700">{item.error_detail}</span>}
+                {item.status === 'failed' && item.error_code === 'twilio_572002' && (
+                  <span className="basis-full text-red-700">
+                    This Twilio trial account cannot message this recipient until the number is verified. Verify it in Twilio Console or upgrade the account, then retry.
+                    {' '}<a className="underline" href="https://www.twilio.com/docs/usage/tutorials/how-to-use-your-free-trial-account" target="_blank" rel="noreferrer">Twilio trial requirements</a>
+                  </span>
+                )}
+                {item.last_attempt_at && <span>Last attempt: {new Date(item.last_attempt_at).toLocaleString()}</span>}
+                {item.delivered_at && <span>Delivered: {new Date(item.delivered_at).toLocaleString()}</span>}
+                {item.status === 'failed' && <button type="button" disabled={retryingWhatsAppId !== null} onClick={() => retryWhatsApp(item.id)} className="rounded border border-slate-300 px-3 py-1 font-medium hover:bg-white disabled:opacity-50">{retryingWhatsAppId === item.id ? 'Retrying...' : item.attempt_count < item.max_attempts ? 'Retry WhatsApp' : 'Retry after fixing Twilio'}</button>}
+              </div>)}
+            </div>
+          </section>
           {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
           {suggestionError && <p className="mt-3 text-sm text-red-600">{suggestionError}</p>}
           {ticket.ai_summary && (

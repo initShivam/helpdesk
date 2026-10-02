@@ -28,6 +28,10 @@ Render Blueprints let the worker and API share the database, Redis, secret, and 
 
 ## Ollama embeddings
 
+Local development defaults to offline `EMBEDDING_PROVIDER=local`, so Ollama is
+not required. Production defaults to Ollama; configure a reachable endpoint
+before enabling AI suggestions there.
+
 Install Ollama on a machine that can reach the API and worker services, then
 download the model with `ollama pull nomic-embed-text`. Set
 `OLLAMA_BASE_URL` on Render to that Ollama service's reachable HTTP URL. The
