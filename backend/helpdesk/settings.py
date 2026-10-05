@@ -40,14 +40,23 @@ DEFAULT_FROM_EMAIL = (
 )
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_SMTP_TIMEOUT_SECONDS', '15'))
 
-# Twilio WhatsApp is opt-in and independent of SMTP/IMAP settings.
+# Meta WhatsApp is opt-in and independent of SMTP/IMAP settings.
 WHATSAPP_ENABLED = os.getenv('WHATSAPP_ENABLED', 'False').lower() == 'true'
-WHATSAPP_PROVIDER = os.getenv('WHATSAPP_PROVIDER', 'twilio').strip().lower()
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
-TWILIO_WHATSAPP_FROM = os.getenv('TWILIO_WHATSAPP_FROM', '').strip()
-WHATSAPP_TEMPLATE_SID = os.getenv('WHATSAPP_TEMPLATE_SID', '').strip()
-TWILIO_STATUS_CALLBACK_URL = os.getenv('TWILIO_STATUS_CALLBACK_URL', '').strip()
+WHATSAPP_PROVIDER = os.getenv('WHATSAPP_PROVIDER', 'meta').strip().lower()
+_meta_whatsapp_access_token = os.getenv('META_WHATSAPP_ACCESS_TOKEN', '').strip()
+if (
+    len(_meta_whatsapp_access_token) >= 2
+    and _meta_whatsapp_access_token[0] in ("'", '"')
+    and _meta_whatsapp_access_token[-1] == _meta_whatsapp_access_token[0]
+):
+    _meta_whatsapp_access_token = _meta_whatsapp_access_token[1:-1].strip()
+META_WHATSAPP_ACCESS_TOKEN = _meta_whatsapp_access_token
+META_WHATSAPP_PHONE_NUMBER_ID = os.getenv('META_WHATSAPP_PHONE_NUMBER_ID', '').strip()
+META_WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv('META_WHATSAPP_BUSINESS_ACCOUNT_ID', '').strip()
+META_WHATSAPP_TEMPLATE_NAME = os.getenv('META_WHATSAPP_TEMPLATE_NAME', '').strip()
+META_WHATSAPP_TEMPLATE_LANGUAGE = os.getenv('META_WHATSAPP_TEMPLATE_LANGUAGE', '').strip()
+META_WHATSAPP_VERIFY_TOKEN = os.getenv('META_WHATSAPP_VERIFY_TOKEN', '').strip()
+META_WHATSAPP_APP_SECRET = os.getenv('META_WHATSAPP_APP_SECRET', '').strip()
 
 # Keep production safe by default and refuse an explicit unsafe override.
 DEBUG = os.getenv('DJANGO_DEBUG', 'False' if IS_PRODUCTION else 'True').lower() == 'true'

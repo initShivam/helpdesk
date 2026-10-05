@@ -1,7 +1,6 @@
 from django.db import models
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
-import json
 import uuid
 
 class Ticket(models.Model):
@@ -121,7 +120,7 @@ class WhatsAppNotification(models.Model):
     customer = models.ForeignKey(CustomerContact, on_delete=models.SET_NULL, null=True, related_name="whatsapp_notifications")
     recipient_number = models.CharField(max_length=16)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
-    twilio_message_sid = models.CharField(max_length=64, blank=True, db_index=True)
+    meta_message_id = models.CharField(max_length=128, blank=True, db_index=True)
     attempt_count = models.PositiveSmallIntegerField(default=0)
     error_code = models.CharField(max_length=40, blank=True)
     error_detail = models.CharField(max_length=255, blank=True)
@@ -134,11 +133,6 @@ class WhatsAppNotification(models.Model):
     failed_at = models.DateTimeField(null=True, blank=True)
     class Meta:
         ordering = ["-created_at"]
-
-    @property
-    def content_variables(self):
-        return json.dumps({"1": self.ticket.ticket_number, "2": self.ticket.subject})
-
 
 class AILog(models.Model):
     STATUS_CHOICES = [

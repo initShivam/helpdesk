@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.conf import settings
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.utils.text import get_valid_filename
 from email_ingestion.models import EmailAttachment
 from django.shortcuts import get_object_or_404
@@ -15,12 +15,14 @@ from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from rest_framework.views import APIView
+import hashlib
+import hmac
 from .models import Ticket, TicketMessage, AILog, ResolutionNotification, CustomerContact, WhatsAppNotification
 from .serializers import TicketSerializer, TicketMessageSerializer
 from .auth import SessionAuthenticationWith401
 from .ai import enrich_ticket
 from .tasks import generate_ai_suggestion, classify_ticket, summarize_ticket, enqueue_resolution_notification, enqueue_whatsapp_notification
-from .services.whatsapp_service import normalize_whatsapp_number, configuration_ready
+from .services.whatsapp_service import normalize_whatsapp_number, configuration_ready, safe_provider_detail
 from .pagination import TicketPagination
 
 
@@ -47,40 +49,66 @@ def mask_number(number):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class TwilioWhatsAppWebhookView(APIView):
+class MetaWhatsAppWebhookView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
+    def get(self, request):
+        verify_token = settings.META_WHATSAPP_VERIFY_TOKEN
+        if (
+            request.query_params.get("hub.mode") != "subscribe"
+            or not verify_token
+            or not hmac.compare_digest(request.query_params.get("hub.verify_token", ""), verify_token)
+        ):
+            return Response(status=403)
+        return HttpResponse(request.query_params.get("hub.challenge", ""), content_type="text/plain")
+
     def post(self, request):
-        from twilio.request_validator import RequestValidator
-        token = settings.TWILIO_AUTH_TOKEN
-        signature = request.headers.get("X-Twilio-Signature", "")
-        if not token or not signature:
+        app_secret = settings.META_WHATSAPP_APP_SECRET
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not app_secret or not signature.startswith("sha256="):
             return Response(status=403)
-        validator = RequestValidator(token)
-        if not validator.validate(request.build_absolute_uri(), request.data, signature):
+        expected_signature = "sha256=" + hmac.new(
+            app_secret.encode("utf-8"),
+            request.body,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected_signature):
             return Response(status=403)
-        sid = request.data.get("MessageSid", "")
-        state = (request.data.get("MessageStatus") or request.data.get("SmsStatus") or "").lower()
-        notification = WhatsAppNotification.objects.filter(twilio_message_sid=sid).first()
-        if not notification or not sid:
-            return Response(status=204)
-        now = timezone.now()
         ranks = {"pending": 0, "queued": 1, "sent": 2, "failed": 3, "delivered": 4, "read": 5}
-        if state in ranks and ranks.get(state, 0) >= ranks.get(notification.status, 0):
-            notification.status = state
-            fields = ["status"]
-            if state == "sent" and not notification.sent_at:
-                notification.sent_at = now; fields.append("sent_at")
-            elif state == "delivered":
-                notification.delivered_at = notification.delivered_at or now; fields.append("delivered_at")
-            elif state == "read":
-                notification.read_at = notification.read_at or now; fields.append("read_at")
-            elif state == "failed":
-                notification.failed_at = notification.failed_at or now
-                notification.error_code = "provider_delivery_failed"
-                fields.extend(["failed_at", "error_code"])
-            notification.save(update_fields=fields)
+        for entry in request.data.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value") or {}
+                for event in value.get("statuses", []):
+                    message_id = event.get("id", "")
+                    state = (event.get("status") or "").lower()
+                    if not message_id or state not in ranks:
+                        continue
+                    notification = WhatsAppNotification.objects.filter(meta_message_id=message_id).first()
+                    if not notification or ranks[state] < ranks.get(notification.status, 0):
+                        continue
+                    notification.status = state
+                    now = timezone.now()
+                    fields = ["status"]
+                    if state == "sent" and not notification.sent_at:
+                        notification.sent_at = now
+                        fields.append("sent_at")
+                    elif state == "delivered":
+                        notification.delivered_at = notification.delivered_at or now
+                        fields.append("delivered_at")
+                    elif state == "read":
+                        notification.read_at = notification.read_at or now
+                        fields.append("read_at")
+                    elif state == "failed":
+                        errors = event.get("errors") or []
+                        error = errors[0] if errors else {}
+                        code = error.get("code")
+                        notification.error_code = f"meta_{code}" if isinstance(code, int) else "provider_delivery_failed"
+                        details = error.get("error_data", {}).get("details") or error.get("title") or ""
+                        notification.error_detail = safe_provider_detail(details)
+                        notification.failed_at = notification.failed_at or now
+                        fields.extend(["failed_at", "error_code", "error_detail"])
+                    notification.save(update_fields=fields)
         return Response(status=204)
 
 
@@ -259,15 +287,30 @@ class TicketViewSet(viewsets.ModelViewSet):
             if notification.attempt_count >= WhatsAppNotification.MAX_ATTEMPTS:
                 if request.data.get("retry_after_fix") is not True:
                     return Response(
-                        {"detail": "The automatic retry limit was reached. Fix the Twilio issue, then confirm a new manual attempt."},
+                        {"detail": "The automatic retry limit was reached. Fix the WhatsApp issue, then confirm a new manual attempt."},
                         status=409,
                     )
                 notification.attempt_count = 0
+            if notification.error_code == "contact_changed":
+                contact = notification.customer
+                if not contact or not contact.whatsapp_consent or not contact.whatsapp_number:
+                    return Response({"detail": "A current opted-in WhatsApp contact is required before retrying."}, status=409)
+                try:
+                    notification.recipient_number = normalize_whatsapp_number(contact.whatsapp_number)
+                except ValueError:
+                    return Response({"detail": "The current WhatsApp contact number is invalid."}, status=409)
             notification.status = "pending"
             notification.error_code = ""
             notification.error_detail = ""
             notification.failed_at = None
-            notification.save(update_fields=["status", "attempt_count", "error_code", "error_detail", "failed_at"])
+            notification.save(update_fields=[
+                "status",
+                "attempt_count",
+                "recipient_number",
+                "error_code",
+                "error_detail",
+                "failed_at",
+            ])
             transaction.on_commit(lambda notification_id=notification.pk: enqueue_whatsapp_notification(notification_id))
         return Response({"status": "pending", "notification_id": notification.pk}, status=202)
 

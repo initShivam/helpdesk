@@ -74,19 +74,16 @@ def send_whatsapp_notification_task(self, notification_id: int) -> str:
     except ValueError:
         current_number = ""
     if current_number != notification.recipient_number:
-        notification.status = "failed"
-        notification.error_code = "contact_changed"
-        notification.failed_at = timezone.now()
-        notification.save(update_fields=["status", "error_code", "failed_at"])
-        return "failed"
+        notification.recipient_number = current_number
+        notification.save(update_fields=["recipient_number"])
     from .services.whatsapp_service import send_whatsapp_notification
     result = send_whatsapp_notification(notification)
     if result.success:
         notification.status = "sent"
-        notification.twilio_message_sid = result.message_sid
+        notification.meta_message_id = result.message_id
         notification.sent_at = timezone.now()
         notification.error_code = ""
-        notification.save(update_fields=["status", "twilio_message_sid", "sent_at", "error_code"])
+        notification.save(update_fields=["status", "meta_message_id", "sent_at", "error_code"])
         return "sent"
     notification.error_code = result.error_code[:40]
     notification.error_detail = result.error_detail[:255]
