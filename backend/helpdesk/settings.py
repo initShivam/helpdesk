@@ -3,6 +3,7 @@
 Generated via Context7 documentation for Django 5.x.
 """
 import os
+from datetime import timedelta
 from pathlib import Path
 import dj_database_url
 from dotenv import load_dotenv
@@ -58,6 +59,14 @@ META_WHATSAPP_TEMPLATE_LANGUAGE = os.getenv('META_WHATSAPP_TEMPLATE_LANGUAGE', '
 META_WHATSAPP_VERIFY_TOKEN = os.getenv('META_WHATSAPP_VERIFY_TOKEN', '').strip()
 META_WHATSAPP_APP_SECRET = os.getenv('META_WHATSAPP_APP_SECRET', '').strip()
 
+# GREEN-API credentials are optional until the provider is configured. They are
+# only consumed by the isolated whatsapp app and are never exposed to clients.
+GREEN_API_URL = os.getenv('GREEN_API_URL', '').strip().rstrip('/')
+GREEN_API_MEDIA_URL = os.getenv('GREEN_API_MEDIA_URL', '').strip().rstrip('/')
+GREEN_API_INSTANCE_ID = os.getenv('GREEN_API_INSTANCE_ID', '').strip()
+GREEN_API_TOKEN = os.getenv('GREEN_API_TOKEN', '').strip()
+GREEN_API_TIMEOUT_SECONDS = int(os.getenv('GREEN_API_TIMEOUT_SECONDS', '15'))
+
 # Keep production safe by default and refuse an explicit unsafe override.
 DEBUG = os.getenv('DJANGO_DEBUG', 'False' if IS_PRODUCTION else 'True').lower() == 'true'
 if IS_PRODUCTION and DEBUG:
@@ -105,11 +114,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Third‑party
     'rest_framework',
+    'knox',
     'django_filters',
     'corsheaders',
     'django_prometheus',
     # Local apps
     'tickets',
+    'whatsapp',
     'accounts',
     'email_ingestion',
     'knowledge_base',
@@ -241,11 +252,16 @@ if IS_PRODUCTION:
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.User'
 
-# Django REST Framework defaults – use session authentication
+# Knox supports tab-scoped tokens; session authentication remains for legacy clients.
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'knox.auth.TokenAuthentication',
         'tickets.auth.SessionAuthenticationWith401',
     ],
+}
+REST_KNOX = {
+    'TOKEN_TTL': timedelta(minutes=30),
+    'AUTH_HEADER_PREFIX': 'Bearer',
 }
 REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
     'ai': os.getenv('AI_REQUESTS_PER_HOUR', '60/hour'),
@@ -363,3 +379,6 @@ OLLAMA_EMBEDDING_MODEL = os.getenv('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '120'))
 PGVECTOR_ENABLED = os.getenv('PGVECTOR_ENABLED', 'False') == 'True'
 AI_SUGGESTION_TIMEOUT = int(os.getenv('AI_SUGGESTION_TIMEOUT', '30'))
+AI_AUTO_RESOLUTION_RETRIEVAL_MIN_SIMILARITY = 0.35
+AI_AUTO_RESOLUTION_CANDIDATE_LIMIT = 50
+AI_AUTO_RESOLUTION_MAX_MATCHES = 3

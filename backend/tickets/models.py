@@ -80,6 +80,101 @@ class TicketMessage(models.Model):
         return f"Message {self.id} on {self.ticket.ticket_number}"
 
 
+class ResolvedTicketKnowledge(models.Model):
+    """Cached embedding for a human-resolved ticket and its agent response."""
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="resolution_knowledge",
+    )
+    problem_text = models.TextField()
+    resolution_text = models.TextField()
+    embedding = models.JSONField(default=list, blank=True)
+    embedding_model = models.CharField(max_length=100, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class AutoResolutionSettings(models.Model):
+    """Database-backed runtime controls for the auto-resolution worker."""
+
+    enabled = models.BooleanField(default=False)
+    email_auto_reply = models.BooleanField(default=True)
+    whatsapp_auto_reply = models.BooleanField(default=False)
+    simulation_mode = models.BooleanField(default=True)
+    minimum_threshold = models.FloatField(
+        default=0.85,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+    )
+    changed_at = models.DateTimeField(auto_now=True)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="auto_resolution_setting_changes",
+    )
+
+
+def get_auto_resolution_settings():
+    return AutoResolutionSettings.objects.get_or_create(pk=1)[0]
+
+
+class AutoResolutionAudit(models.Model):
+    DECISION_CHOICES = [
+        ("processing", "Processing"),
+        ("agent_review", "Agent review"),
+        ("simulation", "Simulation"),
+        ("auto_send", "Auto-send"),
+        ("auto_sent", "Auto-sent"),
+    ]
+    SEND_STATUS_CHOICES = [
+        ("not_sent", "Not sent"),
+        ("pending", "Pending"),
+        ("sending", "Sending"),
+        ("sent", "Sent"),
+        ("failed", "Failed"),
+        ("unavailable", "Unavailable"),
+    ]
+    CHANNEL_CHOICES = [
+        ("email", "Email"),
+        ("whatsapp", "WhatsApp"),
+        ("", "Unknown"),
+    ]
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="auto_resolution_audit",
+    )
+    matched_ticket_ids = models.JSONField(default=list, blank=True)
+    matched_similarities = models.JSONField(default=list, blank=True)
+    selected_match_id = models.PositiveBigIntegerField(null=True, blank=True)
+    similarity_score = models.FloatField(null=True, blank=True)
+    ai_confidence = models.FloatField(null=True, blank=True)
+    generated_response = models.TextField(blank=True)
+    channel = models.CharField(max_length=16, choices=CHANNEL_CHOICES, blank=True)
+    decision = models.CharField(max_length=16, choices=DECISION_CHOICES, default="processing")
+    decision_reason = models.CharField(max_length=160, blank=True)
+    send_status = models.CharField(max_length=16, choices=SEND_STATUS_CHOICES, default="not_sent")
+    send_error = models.CharField(max_length=80, blank=True)
+    provider_result = models.CharField(max_length=80, blank=True)
+    provider_message_id = models.CharField(max_length=128, blank=True)
+    send_attempts = models.PositiveSmallIntegerField(default=0)
+    ai_log = models.ForeignKey(
+        "tickets.AILog",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="auto_resolution_audits",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
 class ResolutionNotification(models.Model):
     STATUS_CHOICES = [("pending", "Pending"), ("sending", "Sending"), ("sent", "Sent"), ("failed", "Failed")]
     MAX_ATTEMPTS = 3

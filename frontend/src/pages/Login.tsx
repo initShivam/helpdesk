@@ -13,6 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthContext } from '@/context/AuthContext';
+import { setAuthToken } from '@/api';
 import { MeResponse } from '@/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -55,7 +56,7 @@ const Login: React.FC = () => {
       }
       const { csrfToken } = await csrfResponse.json();
 
-      const res = await fetch(`${API_BASE_URL}/api/auth/login/`, {
+      const res = await fetch(`${API_BASE_URL}/api/auth/token-login/`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -85,8 +86,9 @@ const Login: React.FC = () => {
         throw new Error(message);
       }
 
-      const data: MeResponse = await res.json();
-      auth.setUser(data);
+      const data: { token: string; user: MeResponse } = await res.json();
+      setAuthToken(data.token);
+      auth.setUser(data.user);
       navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');

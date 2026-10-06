@@ -12,6 +12,7 @@ from .models import EmailAttachment, InboundEmail, MailboxSyncState
 from .parser import ParsedEmail, parse_email
 from tickets.ai import enrich_ticket
 from tickets.models import Ticket, TicketMessage
+from tickets.tasks import enqueue_auto_resolution
 
 logger = logging.getLogger(__name__)
 _mailbox_sync_lock = Lock()
@@ -28,6 +29,7 @@ def persist_email(parsed: ParsedEmail) -> tuple[InboundEmail, bool]:
         return existing, False
 
     ticket = None
+    ticket_created = False
     if parsed.thread_id:
         ticket = (
             Ticket.objects.filter(inbound_emails__thread_id=parsed.thread_id)
@@ -42,6 +44,7 @@ def persist_email(parsed: ParsedEmail) -> tuple[InboundEmail, bool]:
             requester_email=parsed.sender_email,
             source="email",
         )
+        ticket_created = True
 
     message = TicketMessage.objects.create(
         ticket=ticket,
@@ -69,6 +72,10 @@ def persist_email(parsed: ParsedEmail) -> tuple[InboundEmail, bool]:
             attachment.filename,
             ContentFile(attachment.content),
             save=True,
+        )
+    if ticket_created:
+        transaction.on_commit(
+            lambda ticket_id=ticket.pk: enqueue_auto_resolution(ticket_id)
         )
     return inbound, True
 

@@ -6,4 +6,4 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "helpdesk.settings")
 
 app = Celery("helpdesk")
 app.config_from_object("django.conf:settings", namespace="CELERY")
-app.autodiscover_tasks(["email_ingestion", "tickets"])
+app.autodiscover_tasks(["email_ingestion", "tickets", "whatsapp"])

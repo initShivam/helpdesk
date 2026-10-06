@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested import routers
 from .views import TicketViewSet, TicketMessageViewSet, AnalyticsOverviewView, MetaWhatsAppWebhookView
+from .auto_resolution_views import AutoResolutionAuditView, AutoResolutionSettingsView
 
 # Primary router for tickets
 router = DefaultRouter()
@@ -13,6 +14,8 @@ tickets_router.register(r'messages', TicketMessageViewSet, basename='ticket-mess
 
 urlpatterns = [
     path('whatsapp/webhook/', MetaWhatsAppWebhookView.as_view(), name='whatsapp-webhook'),
+    path('admin/auto-resolution/', AutoResolutionSettingsView.as_view(), name='auto-resolution-settings'),
+    path('tickets/<int:ticket_id>/auto-resolution/', AutoResolutionAuditView.as_view(), name='ticket-auto-resolution'),
     path('analytics/overview', AnalyticsOverviewView.as_view(), name='analytics-overview-no-slash'),
     path('analytics/overview/', AnalyticsOverviewView.as_view(), name='analytics-overview'),
 ] + router.urls + tickets_router.urls

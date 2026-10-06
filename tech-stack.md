@@ -27,19 +27,51 @@
   detection, and attachment persistence.
 - `knowledge_base/` owns document ingestion, chunking, embeddings, and
   similarity retrieval.
+- `whatsapp/` owns the isolated GREEN-API transport, configuration validation,
+  test-send command, and asynchronous send task. It is not connected to ticket
+  creation or automatic AI responses.
 - `helpdesk/` owns project settings, URL routing, Celery configuration, and
   health checks.
 
 ## Authentication and security
 
-Authentication uses Django sessions with CSRF protection. API access uses the
-custom session authentication class. CORS and CSRF trusted origins are
-configured for the local Vite ports. Production throttling and Redis-backed
-caching are enabled when `DJANGO_ENV=production`.
+The React application uses expiring Django REST Knox bearer tokens stored in
+per-tab `sessionStorage`; its API client omits browser cookies and sends the
+current tab's token. Logout revokes only that token. Django session
+authentication and CSRF protection remain available for legacy clients and the
+Django admin. CORS and CSRF trusted origins are configured for the local Vite
+ports. Production throttling and Redis-backed caching are enabled when
+`DJANGO_ENV=production`.
+
+Email intake can run AI auto-resolution through Celery. Admins control the
+database-backed master switch, email/WhatsApp channels, simulation mode, and
+minimum similarity/confidence threshold from the Admin Panel; workers read the
+current values when processing and immediately before sending. Defaults are
+disabled and simulation-only, with an 85% threshold. The worker compares new
+tickets with cached embeddings from resolved tickets having meaningful,
+human-authored replies, then stores match scores, selected match, confidence,
+response, decision, channel, and delivery outcome in the audit log. Sensitive
+or uncertain tickets and weak matches remain for agent review. Email delivery
+uses the configured Django email backend. WhatsApp auto-send remains
+unavailable for generated text because the existing Meta integration only
+sends a fixed approved template; enabled WhatsApp cases are explicitly recorded
+as template-restricted and sent for review. Delivery uses a committed sending
+state and does not retry uncertain email outcomes, preferring a possible missed
+send that agents can review over duplicate customer messages.
 
 Attachments are exposed through ticket-scoped authenticated endpoints. AI input
 is sanitized before provider requests, and AI calls are recorded in the
 `AILog` model without storing unsanitized prompts.
+
+GREEN-API settings are loaded server-side from the existing repository-root
+`.env`. Use `python manage.py send_whatsapp_test` to check instance state
+without sending. A real test message requires `--phone`, `--message`, and the
+explicit `--confirm-send` flag. The `whatsapp.tasks.send_whatsapp_message_task`
+Celery task checks authorization before sending. When
+`WHATSAPP_PROVIDER=green_api`, opted-in ticket resolution notifications use
+GREEN-API after checking instance authorization; `WHATSAPP_PROVIDER=meta`
+continues to use the Meta template sender. Credentials are never sent to the
+React application or included in provider error logs.
 
 ## AI and retrieval
 

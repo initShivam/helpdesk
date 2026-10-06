@@ -52,14 +52,20 @@ def normalize_whatsapp_number(value):
 
 
 def configuration_ready():
-    return bool(
-        settings.WHATSAPP_ENABLED
-        and settings.WHATSAPP_PROVIDER == "meta"
-        and _access_token()
-        and settings.META_WHATSAPP_PHONE_NUMBER_ID
-        and settings.META_WHATSAPP_TEMPLATE_NAME
-        and settings.META_WHATSAPP_TEMPLATE_LANGUAGE
-    )
+    if not settings.WHATSAPP_ENABLED:
+        return False
+    if settings.WHATSAPP_PROVIDER == "green_api":
+        from whatsapp.services import validate_configuration
+
+        return not validate_configuration()
+    if settings.WHATSAPP_PROVIDER == "meta":
+        return bool(
+            _access_token()
+            and settings.META_WHATSAPP_PHONE_NUMBER_ID
+            and settings.META_WHATSAPP_TEMPLATE_NAME
+            and settings.META_WHATSAPP_TEMPLATE_LANGUAGE
+        )
+    return False
 
 
 def _provider_failure(status_code, error):
@@ -88,7 +94,14 @@ def _provider_failure(status_code, error):
 
 def send_whatsapp_notification(notification):
     if not configuration_ready():
-        return WhatsAppResult(False, error_code="provider_unavailable", error_detail="Meta WhatsApp is not fully configured.")
+        return WhatsAppResult(
+            False,
+            error_code="provider_unavailable",
+            error_detail="WhatsApp provider is not fully configured.",
+        )
+    if settings.WHATSAPP_PROVIDER == "green_api":
+        return _send_green_api_notification(notification)
+
     try:
         recipient = normalize_whatsapp_number(notification.recipient_number)
     except ValueError:
@@ -145,3 +158,55 @@ def send_whatsapp_notification(notification):
     except (AttributeError, IndexError, TypeError):
         logger.warning("Meta WhatsApp response omitted message ID")
         return WhatsAppResult(False, error_code="provider_rejected")
+
+
+def _send_green_api_notification(notification):
+    from whatsapp.services import get_state_instance, send_whatsapp_message
+
+    state = get_state_instance()
+    if state.status != "authorized":
+        error_code = (
+            "green_api_not_authorized"
+            if state.status == "notAuthorized"
+            else f"green_api_{state.error_code or 'state_error'}"
+        )
+        return WhatsAppResult(
+            False,
+            error_code=error_code[:40],
+            transient=state.error_code in {
+                "network_error",
+                "http_429",
+                "http_500",
+                "http_502",
+                "http_503",
+                "http_504",
+            },
+            error_detail=(
+                "GREEN-API instance is not authorized."
+                if state.status == "notAuthorized"
+                else "GREEN-API instance status could not be verified."
+            ),
+        )
+
+    ticket = notification.ticket
+    message = (
+        f"Your support ticket #{ticket.ticket_number} has been resolved. "
+        "Please contact our support team if you need any further assistance."
+    )
+    result = send_whatsapp_message(notification.recipient_number, message)
+    if result.status == "sent":
+        return WhatsAppResult(True, message_id=result.message_id)
+    transient = result.error_code in {
+        "network_error",
+        "http_429",
+        "http_500",
+        "http_502",
+        "http_503",
+        "http_504",
+    }
+    return WhatsAppResult(
+        False,
+        error_code=f"green_api_{result.error_code}"[:40],
+        transient=transient,
+        error_detail="GREEN-API could not send the WhatsApp message.",
+    )

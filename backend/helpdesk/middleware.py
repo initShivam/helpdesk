@@ -25,9 +25,13 @@ class AuditLogMiddleware(MiddlewareMixin):
         action = None
         details = {"status_code": response.status_code}
 
-        if method == "POST" and path == "/api/auth/login/" and response.status_code == 200:
+        if (
+            method == "POST"
+            and path in {"/api/auth/login/", "/api/auth/token-login/"}
+            and response.status_code == 200
+        ):
             action = "Login"
-            user = getattr(request, "user", None)
+            user = getattr(request, "audit_user", None) or getattr(request, "user", None)
         elif method == "POST" and path == "/api/auth/logout/" and response.status_code == 200:
             action = "Logout"
         elif (

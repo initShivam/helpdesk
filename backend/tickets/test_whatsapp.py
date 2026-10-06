@@ -89,6 +89,78 @@ class WhatsAppIntegrationTests(TestCase):
             {"name": "hello_world", "language": {"code": "en_US"}},
         )
 
+    @override_settings(
+        WHATSAPP_PROVIDER="green_api",
+        GREEN_API_URL="https://api.green-api.example",
+        GREEN_API_MEDIA_URL="https://media.green-api.example",
+        GREEN_API_INSTANCE_ID="test-instance",
+        GREEN_API_TOKEN="test-green-token",
+        GREEN_API_TIMEOUT_SECONDS=10,
+    )
+    def test_resolution_notification_uses_green_api_when_selected(self):
+        from whatsapp.services import GreenApiResult
+
+        contact = CustomerContact.objects.create(
+            email="wa@example.com",
+            whatsapp_number="+919876543210",
+            whatsapp_consent=True,
+        )
+        with (
+            patch(
+                "whatsapp.services.get_state_instance",
+                return_value=GreenApiResult("authorized"),
+            ) as state_mock,
+            patch(
+                "whatsapp.services.send_whatsapp_message",
+                return_value=GreenApiResult("sent", message_id="green-message-id"),
+            ) as send_mock,
+        ):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.patch(
+                    f"/api/tickets/{self.ticket.pk}/",
+                    {"status": "resolved"},
+                    format="json",
+                )
+
+        self.assertEqual(response.status_code, 200)
+        notification = WhatsAppNotification.objects.get(ticket=self.ticket, customer=contact)
+        self.assertEqual(notification.status, "sent")
+        self.assertEqual(notification.meta_message_id, "green-message-id")
+        state_mock.assert_called_once()
+        send_mock.assert_called_once_with(
+            "+919876543210",
+            "Your support ticket #WA-100 has been resolved. "
+            "Please contact our support team if you need any further assistance.",
+        )
+
+    @override_settings(
+        WHATSAPP_PROVIDER="green_api",
+        GREEN_API_URL="https://api.green-api.example",
+        GREEN_API_MEDIA_URL="https://media.green-api.example",
+        GREEN_API_INSTANCE_ID="test-instance",
+        GREEN_API_TOKEN="test-green-token",
+        GREEN_API_TIMEOUT_SECONDS=10,
+    )
+    def test_green_api_not_authorized_is_recorded_without_send(self):
+        from whatsapp.services import GreenApiResult
+
+        notification = WhatsAppNotification.objects.create(
+            ticket=self.ticket,
+            recipient_number="+919876543210",
+        )
+        with (
+            patch(
+                "whatsapp.services.get_state_instance",
+                return_value=GreenApiResult("notAuthorized"),
+            ),
+            patch("whatsapp.services.send_whatsapp_message") as send_mock,
+        ):
+            result = send_whatsapp_notification(notification)
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "green_api_not_authorized")
+        send_mock.assert_not_called()
+
     def test_send_uses_current_customer_number_instead_of_stale_notification_number(self):
         customer = CustomerContact.objects.create(
             email="wa@example.com",

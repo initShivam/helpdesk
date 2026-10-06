@@ -9,6 +9,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
+from knox.auth import TokenAuthentication
 from datetime import timedelta
 from django.utils import timezone
 from django.db import transaction
@@ -152,7 +153,7 @@ class TicketViewSet(viewsets.ModelViewSet):
     queryset = Ticket.objects.all()
     serializer_class = TicketSerializer
     permission_classes = [TicketPermission]
-    authentication_classes = [SessionAuthenticationWith401]
+    authentication_classes = [TokenAuthentication, SessionAuthenticationWith401]
     pagination_class = TicketPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = {
@@ -407,7 +408,7 @@ class TicketViewSet(viewsets.ModelViewSet):
 class TicketMessageViewSet(viewsets.ModelViewSet):
     serializer_class = TicketMessageSerializer
     permission_classes = [TicketMessagePermission]
-    authentication_classes = [SessionAuthenticationWith401]
+    authentication_classes = [TokenAuthentication, SessionAuthenticationWith401]
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
@@ -440,7 +441,7 @@ class AnalyticsOverviewView(APIView):
     """Provides key operational and AI metrics for the analytics dashboard."""
 
     permission_classes = [AnalyticsPermission]
-    authentication_classes = [SessionAuthenticationWith401]
+    authentication_classes = [TokenAuthentication, SessionAuthenticationWith401]
 
     def get(self, request):
         now = timezone.now()

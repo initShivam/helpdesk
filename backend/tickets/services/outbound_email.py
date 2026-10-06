@@ -23,3 +23,24 @@ def send_resolution_notification(notification):
         "text/html",
     )
     return message.send(fail_silently=False)
+
+
+def send_customer_response(ticket, response_text):
+    """Send a generated response through the configured Django email backend."""
+    recipient = ticket.requester_email.strip()
+    sender = settings.DEFAULT_FROM_EMAIL.strip()
+    if any(character in recipient + sender for character in "\r\n"):
+        raise ValueError("invalid_address")
+    validate_email(recipient)
+    validate_email(sender)
+    subject = " ".join(str(ticket.subject).splitlines()).strip()
+    message = EmailMultiAlternatives(
+        subject=f"Re: {subject}"[:255],
+        body=response_text,
+        from_email=sender,
+        to=[recipient],
+        reply_to=[sender],
+    )
+    if message.send(fail_silently=False) != 1:
+        raise RuntimeError("email_delivery_failed")
+    return 1

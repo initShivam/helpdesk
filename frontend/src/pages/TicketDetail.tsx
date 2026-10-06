@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Bot, CalendarDays, Check, Clock3, LoaderCircle, Paperclip, Send, Sparkles, WandSparkles } from 'lucide-react';
-import { apiJson, API_BASE_URL, getCsrfToken } from '../api';
+import { apiFetch, apiJson, getCsrfToken } from '../api';
 import { AuthContext } from '../context/AuthContext';
 import NavBar from '../components/NavBar';
 import { CategoryBadge, PriorityBadge, StatusBadge } from '../components/ui/Badge';
@@ -41,6 +41,25 @@ interface TicketMessage {
   created_at: string;
   is_ai_generated?: boolean;
   is_draft?: boolean;
+}
+
+interface AutoResolutionAudit {
+  decision: string;
+  decision_reason?: string;
+  matched_ticket_ids?: number[];
+  matched_similarities?: Array<{ ticket_id: number; score: number }>;
+  selected_match_id?: number | null;
+  similarity_score?: number | null;
+  ai_confidence?: number | null;
+  send_status: string;
+  channel?: string;
+  send_error?: string;
+  provider_result?: string;
+  provider_message_id?: string;
+  send_attempts?: number;
+  generated_response?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 const getResponseError = async (response: Response, fallback: string) => {
@@ -96,6 +115,17 @@ const TicketDetail: React.FC = () => {
     enabled: Boolean(id),
     refetchInterval: (query) => query.state.data?.notifications.some((n) => ['pending', 'queued', 'sent'].includes(n.status)) ? 5000 : false,
   });
+  const autoResolutionQuery = useQuery({
+    queryKey: ['auto-resolution', id],
+    queryFn: () => apiJson<AutoResolutionAudit>(`/api/tickets/${id}/auto-resolution/`),
+    enabled: Boolean(id),
+    refetchInterval: (query) => (
+      ['processing', 'auto_send'].includes(query.state.data?.decision ?? '')
+      || ['pending', 'sending'].includes(query.state.data?.send_status ?? '')
+        ? 2000
+        : false
+    ),
+  });
   useEffect(() => {
     if (whatsappQuery.data && initializedWhatsAppContact.current !== id) {
       setWhatsappNumber(whatsappQuery.data.contact.number || '');
@@ -115,15 +145,31 @@ const TicketDetail: React.FC = () => {
   };
   const error = ticketQuery.error || messagesQuery.error;
 
+  const downloadAttachment = async (downloadUrl: string, filename: string) => {
+    try {
+      const response = await apiFetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(await getResponseError(response, 'Unable to download this attachment.'));
+      }
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (reason: unknown) {
+      setActionError(reason instanceof Error ? reason.message : 'Unable to download this attachment.');
+    }
+  };
+
   const updateTicket = async (status: string) => {
     if (!id) return;
     setActionError(null);
     setIsSaving(true);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/`, {
+      const response = await apiFetch(`/api/tickets/${id}/`, {
         method: 'PATCH',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken,
@@ -148,8 +194,8 @@ const TicketDetail: React.FC = () => {
     setActionError(null);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/retry-resolution-notification/`, {
-        method: 'POST', credentials: 'include', headers: { 'X-CSRFToken': csrfToken },
+      const response = await apiFetch(`/api/tickets/${id}/retry-resolution-notification/`, {
+        method: 'POST', headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) throw new Error(await getResponseError(response, 'Unable to retry the notification.'));
       await queryClient.invalidateQueries({ queryKey: ['resolution-notification', id] });
@@ -197,9 +243,8 @@ const TicketDetail: React.FC = () => {
     setIsSaving(true);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/`, {
+      const response = await apiFetch(`/api/tickets/${id}/`, {
         method: 'DELETE',
-        credentials: 'include',
         headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) {
@@ -221,9 +266,8 @@ const TicketDetail: React.FC = () => {
     setIsSaving(true);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/messages/`, {
+      const response = await apiFetch(`/api/tickets/${id}/messages/`, {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken,
@@ -249,9 +293,8 @@ const TicketDetail: React.FC = () => {
     setIsSuggesting(true);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/suggest-reply/`, {
+      const response = await apiFetch(`/api/tickets/${id}/suggest-reply/`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) {
@@ -259,10 +302,7 @@ const TicketDetail: React.FC = () => {
       }
       for (let attempt = 0; attempt < 30; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        const statusResponse = await fetch(
-          `${API_BASE_URL}/api/tickets/${id}/suggestion-status/`,
-          { credentials: 'include' },
-        );
+        const statusResponse = await apiFetch(`/api/tickets/${id}/suggestion-status/`);
         const data = await statusResponse.json();
         if (data.status === 'succeeded' && data.message) {
           setMessages((current) => [
@@ -289,9 +329,8 @@ const TicketDetail: React.FC = () => {
     setSuggestionError(null);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/accept-suggestion/`, {
+      const response = await apiFetch(`/api/tickets/${id}/accept-suggestion/`, {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken,
@@ -317,9 +356,8 @@ const TicketDetail: React.FC = () => {
     setIsClassifying(true);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/classify/`, {
+      const response = await apiFetch(`/api/tickets/${id}/classify/`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) {
@@ -340,9 +378,8 @@ const TicketDetail: React.FC = () => {
     setIsSummarizing(true);
     try {
       const csrfToken = await getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/api/tickets/${id}/summarize/`, {
+      const response = await apiFetch(`/api/tickets/${id}/summarize/`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'X-CSRFToken': csrfToken },
       });
       if (!response.ok) {
@@ -560,20 +597,76 @@ const TicketDetail: React.FC = () => {
               <h2 className="text-sm font-semibold text-slate-900">Attachments</h2>
               <div className="mt-2 flex flex-wrap gap-2">
                 {ticket.attachments.map((attachment) => (
-                  <a
+                  <button
                     key={attachment.id}
-                    href={`${API_BASE_URL}${attachment.download_url}`}
+                    type="button"
+                    onClick={() => void downloadAttachment(attachment.download_url, attachment.filename)}
                     className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-blue-700 transition hover:bg-blue-50"
-                    download={attachment.filename}
                   >
                     <Paperclip className="size-4" aria-hidden="true" />{attachment.filename}
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>
           )}
         </section>
         <section className="space-y-3">
+          {autoResolutionQuery.data
+            && typeof autoResolutionQuery.data.decision === 'string'
+            && autoResolutionQuery.data.decision !== 'not_started' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+              <p className="font-semibold">
+                AI auto-resolution: {autoResolutionQuery.data.decision.replaceAll('_', ' ')}
+              </p>
+              {autoResolutionQuery.data.decision_reason && (
+                <p className="mt-1 text-amber-900">
+                  {autoResolutionQuery.data.decision_reason.replaceAll('_', ' ')}
+                </p>
+              )}
+              <p className="mt-1 text-xs text-amber-900">
+                {autoResolutionQuery.data.matched_ticket_ids?.length ?? 0} resolved case(s) matched
+                {autoResolutionQuery.data.selected_match_id
+                  ? ` · selected ticket #${autoResolutionQuery.data.selected_match_id}`
+                  : ''}
+                {autoResolutionQuery.data.similarity_score != null
+                  ? ` · similarity ${Math.round(autoResolutionQuery.data.similarity_score * 100)}%`
+                  : ''}
+                {autoResolutionQuery.data.ai_confidence != null
+                  ? ` · AI confidence ${Math.round(autoResolutionQuery.data.ai_confidence * 100)}%`
+                  : ''}
+                {autoResolutionQuery.data.send_status !== 'not_sent'
+                  ? ` · ${autoResolutionQuery.data.channel ?? 'channel'} ${autoResolutionQuery.data.send_status}`
+                  : ''}
+              </p>
+              {(autoResolutionQuery.data.provider_result
+                || autoResolutionQuery.data.provider_message_id
+                || autoResolutionQuery.data.send_error
+                || autoResolutionQuery.data.generated_response
+                || (autoResolutionQuery.data.matched_similarities?.length ?? 0) > 0) && (
+                <details className="mt-2 text-xs text-amber-900">
+                  <summary className="cursor-pointer font-medium">Audit details</summary>
+                  <div className="mt-2 space-y-1">
+                    {autoResolutionQuery.data.matched_similarities?.map((match) => (
+                      <p key={match.ticket_id}>
+                        Historical ticket #{match.ticket_id}: {Math.round(match.score * 100)}% similarity
+                      </p>
+                    ))}
+                    {autoResolutionQuery.data.provider_result && <p>Provider result: {autoResolutionQuery.data.provider_result}</p>}
+                    {autoResolutionQuery.data.provider_message_id && <p>Provider message ID: {autoResolutionQuery.data.provider_message_id}</p>}
+                    {autoResolutionQuery.data.send_error && <p>Delivery error: {autoResolutionQuery.data.send_error}</p>}
+                    {autoResolutionQuery.data.send_attempts != null && <p>Delivery attempts: {autoResolutionQuery.data.send_attempts}</p>}
+                    {autoResolutionQuery.data.generated_response && (
+                      <div>
+                        <p className="font-medium">Generated response</p>
+                        <p className="whitespace-pre-wrap">{autoResolutionQuery.data.generated_response}</p>
+                      </div>
+                    )}
+                    {autoResolutionQuery.data.updated_at && <p>Updated: {new Date(autoResolutionQuery.data.updated_at).toLocaleString()}</p>}
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
           <div className="flex items-end justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Conversation</h2>
