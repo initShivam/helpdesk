@@ -53,8 +53,8 @@ test.describe('authentication', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole('heading', { name: `Welcome back, ${credentials.username}` })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sign Out' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Good (morning|afternoon|evening), e2e-user/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
   });
 
   test('accepts an email address and persists the session after reload', async ({ page }) => {
@@ -123,7 +123,7 @@ test.describe('authentication', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL(/\/$/);
 
-    await page.getByRole('button', { name: 'Sign Out' }).click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
 
     await expect(page).toHaveURL(/\/login$/);
     await page.goto('/');

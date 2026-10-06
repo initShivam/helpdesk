@@ -75,14 +75,14 @@ test('generates, edits, and accepts an AI suggested reply', async ({ page }) => 
 
   await page.goto('/tickets/1');
   await expect(page.getByRole('heading', { name: 'Password reset' })).toBeVisible();
-  await page.getByRole('button', { name: 'Suggest reply with AI' }).click();
+  await page.getByRole('button', { name: 'Suggest with AI' }).click();
   await expect(page.getByLabel('Edit AI suggested reply')).toHaveValue(
     'Please use the password reset link to regain access.',
   );
   await page.getByLabel('Edit AI suggested reply').fill(
     'Please use the password reset link to regain access. Let us know if you need help.',
   );
-  await page.getByRole('button', { name: 'Accept suggestion' }).click();
+  await page.getByRole('button', { name: 'Use reply' }).click();
 
   await expect(page.getByText('AI suggested reply')).not.toBeVisible();
   await expect(page.getByText('Please use the password reset link to regain access. Let us know if you need help.')).toBeVisible();

@@ -96,10 +96,8 @@ const Login: React.FC = () => {
   };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-muted/30 px-4 py-10">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,oklch(0.97_0_0),transparent_55%)]" />
-
-      <Card className="relative w-full max-w-md shadow-lg">
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+      <Card className="w-full max-w-md rounded-xl border border-slate-200 shadow-sm">
         <CardHeader className="space-y-4 text-center">
           <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
             <Headset className="size-6" aria-hidden="true" />

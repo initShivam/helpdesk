@@ -6,6 +6,7 @@ import PrivateRoute from './components/PrivateRoute';
 import TicketDetail from './pages/TicketDetail';
 import AdminAgents from './pages/AdminAgents';
 import Dashboard from './pages/Dashboard';
+import Home from './pages/Home';
 
 const AppRouter: React.FC = () => {
   return (
@@ -14,6 +15,14 @@ const AppRouter: React.FC = () => {
         <Route path="/login" element={<Login />} />
         <Route
           path="/"
+          element={
+            <PrivateRoute>
+              <Home />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/tickets"
           element={
             <PrivateRoute>
               <App />

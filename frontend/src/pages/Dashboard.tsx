@@ -19,11 +19,13 @@ import NavBar from '../components/NavBar';
 import { AuthContext } from '../context/AuthContext';
 import { apiJson } from '../api';
 import { AnalyticsOverview } from '../types';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/button';
 
 const CATEGORY_COLORS: Record<string, string> = {
-  general: '#64748b',   // slate
-  technical: '#8b5cf6', // purple
-  refund: '#10b981',    // emerald
+  general: '#64748b',
+  technical: '#2563eb',
+  refund: '#0f766e',
 };
 
 const AI_COLORS = ['#3b82f6', '#cbd5e1']; // blue (accepted), slate (pending)
@@ -67,48 +69,41 @@ const Dashboard: React.FC = () => {
   }, [data?.ai_suggestions]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <>
       <NavBar />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="app-main">
+       <div className="mx-auto max-w-[1440px]">
         {/* Header & Controls */}
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 mb-8 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold mb-2">
-                Operational Intelligence
-              </div>
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-                Support & AI Analytics Dashboard
-              </h1>
-              <p className="text-sm text-slate-500 mt-1">
-                Real-time visibility into ticket volumes, agent responsiveness, and AI suggestion impact.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <PageHeader
+            title="Analytics"
+            description="Monitor ticket volume, response times, and AI suggestion adoption."
+          />
+          <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white p-1">
                 {([7, 14, 30] as const).map((d) => (
                   <button
                     key={d}
                     type="button"
                     onClick={() => setDays(d)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    aria-pressed={days === d}
+                    className={`rounded px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
                       days === d
-                        ? 'bg-white text-blue-700 shadow-sm'
+                        ? 'bg-blue-50 text-blue-700'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Last {d}d
+                    {d} days
                   </button>
                 ))}
               </div>
 
-              <button
+              <Button
                 type="button"
                 onClick={() => void refetch()}
                 disabled={isFetching}
-                className="inline-flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+                variant="outline"
               >
                 <svg
                   className={`w-4 h-4 text-slate-500 ${isFetching ? 'animate-spin' : ''}`}
@@ -124,49 +119,50 @@ const Dashboard: React.FC = () => {
                   />
                 </svg>
                 {isFetching ? 'Refreshing...' : 'Refresh'}
-              </button>
-            </div>
+              </Button>
           </div>
         </div>
 
         {error ? (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center text-red-700">
+          <div className="rounded-lg border border-red-200 bg-white p-8 text-center text-red-700">
             <p className="font-semibold text-base">Failed to load analytics data</p>
             <p className="text-sm text-red-600 mt-1">
               {error instanceof Error ? error.message : 'Unknown error occurred.'}
             </p>
             <button
               onClick={() => void refetch()}
-              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 cursor-pointer"
+              className="mt-4 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
             >
               Retry
             </button>
           </div>
         ) : isLoading ? (
-          <div className="p-16 text-center text-slate-500 flex flex-col items-center justify-center gap-3 bg-white rounded-2xl border border-slate-200/80">
-            <svg className="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-            </svg>
-            <span className="text-sm font-medium">Aggregating workspace analytics...</span>
+          <div className="space-y-4" aria-label="Loading analytics">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-lg border border-slate-200 bg-white" />)}
+            </div>
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="h-80 animate-pulse rounded-lg border border-slate-200 bg-white xl:col-span-2" />
+              <div className="h-80 animate-pulse rounded-lg border border-slate-200 bg-white" />
+            </div>
           </div>
         ) : data ? (
           <>
             {/* KPI Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+            <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {/* Total Tickets */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Total Volume
                   </span>
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <div className="flex size-8 items-center justify-center rounded-md bg-blue-50 text-blue-600">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                     </svg>
                   </div>
                 </div>
-                <p className="text-3xl font-extrabold text-slate-900 mt-2">{data.total_tickets}</p>
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{data.total_tickets}</p>
                 <div className="mt-2 text-xs text-slate-500 flex items-center gap-2">
                   <span className="text-blue-600 font-medium">{data.open_tickets} open</span>
                   <span>•</span>
@@ -175,18 +171,18 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* Average First-Reply Time */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Avg First-Reply Time
                   </span>
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <div className="flex size-8 items-center justify-center rounded-md bg-emerald-50 text-emerald-600">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
                 </div>
-                <p className="text-3xl font-extrabold text-slate-900 mt-2">
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
                   {data.average_first_reply_time_formatted}
                 </p>
                 <div className="mt-2 text-xs text-slate-500">
@@ -197,18 +193,18 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* AI Suggestion Acceptance Rate */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     AI Suggestion Acceptance
                   </span>
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <div className="flex size-8 items-center justify-center rounded-md bg-blue-50 text-blue-600">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
                 </div>
-                <p className="text-3xl font-extrabold text-slate-900 mt-2">
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
                   {data.ai_suggestions.acceptance_rate}%
                 </p>
                 <div className="mt-2 text-xs text-slate-500">
@@ -220,18 +216,18 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* Resolution Rate */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Resolution Status
                   </span>
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <div className="flex size-8 items-center justify-center rounded-md bg-amber-50 text-amber-700">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
                 </div>
-                <p className="text-3xl font-extrabold text-slate-900 mt-2">
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
                   {data.total_tickets > 0
                     ? `${Math.round((data.resolved_tickets / data.total_tickets) * 100)}%`
                     : '0%'}
@@ -243,9 +239,9 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
               {/* Daily Ticket Trend (Area Chart) */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm lg:col-span-2">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5 xl:col-span-2">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-base font-bold text-slate-900">Tickets per Day</h2>
@@ -309,7 +305,7 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* AI Suggestion Acceptance Breakdown */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col">
+              <div className="flex flex-col rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
                 <h2 className="text-base font-bold text-slate-900">AI Suggestion Adoption</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Proportion of drafted replies accepted by agents
@@ -369,9 +365,9 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Second Row: Category & Priority Distributions */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {/* Category Distribution */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
                 <h2 className="text-base font-bold text-slate-900">Tickets by Category</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Automated and manual classification distribution
@@ -419,7 +415,7 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* Priority Breakdown */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
                 <h2 className="text-base font-bold text-slate-900">Tickets by Priority</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Severity distribution across active tickets
@@ -458,12 +454,12 @@ const Dashboard: React.FC = () => {
                         {data.priorities.map((entry) => {
                           const color =
                             entry.priority === 'urgent'
-                              ? '#be123c'
+                              ? '#dc2626'
                               : entry.priority === 'high'
-                              ? '#ef4444'
+                              ? '#ea580c'
                               : entry.priority === 'medium'
                               ? '#f59e0b'
-                              : '#10b981';
+                              : '#64748b';
                           return <Cell key={`prio-${entry.priority}`} fill={color} />;
                         })}
                       </Bar>
@@ -474,8 +470,9 @@ const Dashboard: React.FC = () => {
             </div>
           </>
         ) : null}
+       </div>
       </main>
-    </div>
+    </>
   );
 };
 

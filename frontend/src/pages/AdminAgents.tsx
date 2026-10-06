@@ -6,6 +6,8 @@ import { AuthContext } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import NavBar from '@/components/NavBar';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface Agent {
   id: number;
@@ -161,15 +163,15 @@ const AdminAgents: React.FC = () => {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <p className="text-sm font-medium text-blue-700">Administration</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">Agent management</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Create and remove agent accounts. Only administrators can access this page.
-          </p>
-        </div>
+    <>
+    <NavBar />
+    <main className="app-main">
+      <div className="mx-auto max-w-[1200px]">
+        <PageHeader
+          eyebrow="Administration"
+          title="Agent management"
+          description="Create and remove agent accounts. Only administrators can access this page."
+        />
 
         {error && (
           <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
@@ -182,7 +184,7 @@ const AdminAgents: React.FC = () => {
           </div>
         )}
 
-        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="mb-5 rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
           <div className="mb-5 flex items-center gap-3">
             <UserPlus className="size-5 text-blue-600" aria-hidden="true" />
             <div>
@@ -228,8 +230,8 @@ const AdminAgents: React.FC = () => {
           </form>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
             <Users className="size-5 text-slate-500" aria-hidden="true" />
             <div>
               <h2 className="font-semibold text-slate-900">Agents</h2>
@@ -285,6 +287,7 @@ const AdminAgents: React.FC = () => {
         </section>
       </div>
     </main>
+    </>
   );
 };
 

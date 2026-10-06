@@ -1,8 +1,14 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Bot, CalendarDays, Check, Clock3, LoaderCircle, Paperclip, Send, Sparkles, WandSparkles } from 'lucide-react';
 import { apiJson, API_BASE_URL, getCsrfToken } from '../api';
 import { AuthContext } from '../context/AuthContext';
+import NavBar from '../components/NavBar';
+import { CategoryBadge, PriorityBadge, StatusBadge } from '../components/ui/Badge';
+import { EmptyState } from '../components/ui/EmptyState';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/button';
 
 interface Ticket {
   id: number;
@@ -15,6 +21,7 @@ interface Ticket {
   ai_summary?: string | null;
   ai_category_confidence?: number | null;
   created_at: string;
+  updated_at?: string;
   attachments?: Attachment[];
 }
 
@@ -62,6 +69,7 @@ const TicketDetail: React.FC = () => {
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [whatsappConsent, setWhatsappConsent] = useState(false);
   const [retryingWhatsAppId, setRetryingWhatsAppId] = useState<number | null>(null);
+  const initializedWhatsAppContact = useRef<string | null>(null);
 
   const ticketQuery = useQuery({
     queryKey: ['ticket', id],
@@ -88,6 +96,13 @@ const TicketDetail: React.FC = () => {
     enabled: Boolean(id),
     refetchInterval: (query) => query.state.data?.notifications.some((n) => ['pending', 'queued', 'sent'].includes(n.status)) ? 5000 : false,
   });
+  useEffect(() => {
+    if (whatsappQuery.data && initializedWhatsAppContact.current !== id) {
+      setWhatsappNumber(whatsappQuery.data.contact.number || '');
+      setWhatsappConsent(whatsappQuery.data.contact.consent);
+      initializedWhatsAppContact.current = id ?? null;
+    }
+  }, [id, whatsappQuery.data]);
   const ticket = ticketQuery.data ?? null;
   const messages = messagesQuery.data ?? [];
   // Summaries already have their own panel above. They are persisted as system
@@ -149,7 +164,6 @@ const TicketDetail: React.FC = () => {
     try {
       const csrfToken = await getCsrfToken();
       await apiJson(`/api/tickets/${id}/whatsapp-contact/`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }, body: JSON.stringify({ number: whatsappNumber, consent: whatsappConsent }) });
-      setWhatsappNumber('');
       await queryClient.invalidateQueries({ queryKey: ['whatsapp-notifications', id] });
     } catch (reason) { setActionError(reason instanceof Error ? reason.message : 'Unable to save WhatsApp contact.'); }
   };
@@ -158,7 +172,7 @@ const TicketDetail: React.FC = () => {
     if (!id || retryingWhatsAppId !== null) return;
     const notification = whatsappQuery.data?.notifications.find((item) => item.id === notificationId);
     const retryAfterFix = Boolean(notification && notification.attempt_count >= notification.max_attempts);
-    if (retryAfterFix && !window.confirm('The automatic attempts are used up. First fix the Twilio template/sender issue, then start a new manual send attempt?')) return;
+    if (retryAfterFix && !window.confirm('The automatic attempts are used up. First fix the WhatsApp configuration issue, then start a new manual send attempt?')) return;
     setActionError(null);
     setRetryingWhatsAppId(notificationId);
     try {
@@ -192,7 +206,7 @@ const TicketDetail: React.FC = () => {
         throw new Error(await getResponseError(response, 'Unable to delete this ticket.'));
       }
       await queryClient.invalidateQueries({ queryKey: ['tickets'] });
-      navigate('/');
+      navigate('/tickets');
     } catch (reason: unknown) {
       setActionError(reason instanceof Error ? reason.message : 'Ticket deletion failed.');
     } finally {
@@ -346,136 +360,193 @@ const TicketDetail: React.FC = () => {
 
   if (error) {
     return (
-      <main className="p-8 text-red-600">
-        {error instanceof Error ? error.message : 'Unable to load this ticket.'}
-      </main>
+      <>
+        <NavBar />
+        <main className="app-main">
+          <div className="mx-auto max-w-[1440px] rounded-lg border border-red-200 bg-white p-5 text-sm text-red-700" role="alert">
+            {error instanceof Error ? error.message : 'Unable to load this ticket.'}
+          </div>
+        </main>
+      </>
     );
   }
   if (ticketQuery.isLoading || messagesQuery.isLoading || !ticket) {
-    return <main className="p-8 text-slate-500">Loading ticket...</main>;
+    return (
+      <>
+        <NavBar />
+        <main className="app-main">
+          <div className="mx-auto max-w-[1440px] space-y-4" aria-label="Loading ticket">
+            <div className="h-4 w-28 animate-pulse rounded bg-slate-200" />
+            <div className="h-24 animate-pulse rounded-lg border border-slate-200 bg-white" />
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="h-80 animate-pulse rounded-lg border border-slate-200 bg-white" />
+              <div className="h-80 animate-pulse rounded-lg border border-slate-200 bg-white" />
+            </div>
+          </div>
+        </main>
+      </>
+    );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 sm:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <Link to="/" className="text-sm font-medium text-blue-600 hover:underline">
-          ← Back to tickets
+    <>
+    <NavBar />
+    <main className="app-main">
+      <div className="mx-auto max-w-[1440px] space-y-5">
+        <Link to="/tickets" className="text-sm font-medium text-blue-600 hover:underline">
+          <span className="inline-flex items-center gap-2"><ArrowLeft className="size-4" aria-hidden="true" />Back to tickets</span>
         </Link>
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-semibold text-blue-600">{ticket.ticket_number}</p>
-          <h1 className="mt-2 text-2xl font-bold text-slate-900">{ticket.subject}</h1>
-          <p className="mt-2 text-sm text-slate-500">{ticket.requester_email}</p>
-          <div className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
-            <span>Status: <strong>{ticket.status}</strong></span>
-            <span>Category: <strong className="capitalize">{ticket.category}</strong></span>
-            <span>Priority: <strong className="capitalize">{ticket.priority}</strong></span>
+        <section className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-4 sm:p-5 xl:grid-cols-2">
+          <PageHeader
+            className="mb-0 xl:col-span-2"
+            eyebrow={ticket.ticket_number}
+            title={ticket.subject}
+            description={ticket.requester_email}
+            actions={ticket.status === 'open' ? (
+              <Button type="button" onClick={() => updateTicket('resolved')} disabled={isSaving} className="bg-emerald-700 hover:bg-emerald-800">
+                {isSaving ? 'Saving…' : 'Resolve ticket'}
+              </Button>
+            ) : ticket.status === 'resolved' ? (
+              <Button type="button" variant="outline" onClick={() => updateTicket('open')} disabled={isSaving}>Reopen ticket</Button>
+            ) : undefined}
+          />
+          <div className="flex flex-wrap items-center gap-2 xl:col-span-2">
+            <StatusBadge status={ticket.status} />
+            <CategoryBadge category={ticket.category} />
+            <PriorityBadge priority={ticket.priority} />
+            <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500">
+              <CalendarDays className="size-3.5" aria-hidden="true" />
+              Created {new Date(ticket.created_at).toLocaleDateString()}
+            </span>
           </div>
-          <div className="mt-5 flex flex-wrap gap-3">
-            {ticket.status === 'open' && (
-              <button
-                type="button"
-                onClick={() => updateTicket('resolved')}
-                disabled={isSaving}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
-              >
-                {isSaving ? 'Saving...' : 'Resolve ticket'}
-              </button>
-            )}
-            {ticket.status === 'resolved' && (
-              <button
-                type="button"
-                onClick={() => updateTicket('open')}
-                disabled={isSaving}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
-              >
-                Reopen ticket
-              </button>
-            )}
+          <div className="flex flex-wrap gap-2 xl:col-span-2">
             {auth?.user?.role === 'ADMIN' && (
-              <button
-                type="button"
-                onClick={deleteTicket}
-                disabled={isSaving}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
-              >
+              <Button type="button" variant="destructive" onClick={deleteTicket} disabled={isSaving}>
                 {isSaving ? 'Deleting...' : 'Delete ticket'}
-              </button>
+              </Button>
             )}
 
-            <button
-              type="button"
-              onClick={classifyTicket}
-              disabled={isClassifying}
-              className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 cursor-pointer inline-flex items-center gap-2"
-            >
-              <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-              </svg>
-              {isClassifying ? 'Classifying...' : 'Classify with AI'}
-            </button>
+            <Button type="button" variant="outline" onClick={classifyTicket} disabled={isClassifying}>
+            {isClassifying ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Bot className="size-4" aria-hidden="true" />}
+            {isClassifying ? 'Classifying…' : 'Classify with AI'}
+            </Button>
 
-            <button
-              type="button"
-              onClick={summarizeTicket}
-              disabled={isSummarizing}
-              className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-100 disabled:opacity-50 cursor-pointer inline-flex items-center gap-2"
-            >
-              <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              {isSummarizing ? 'Summarizing...' : 'Summarize with AI'}
-            </button>
+            <Button type="button" variant="outline" onClick={summarizeTicket} disabled={isSummarizing}>
+            {isSummarizing ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
+            {isSummarizing ? 'Summarizing…' : 'Summarize with AI'}
+            </Button>
           </div>
           {ticket.status === 'open' && (
-            <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="resolution-note">
+            <label className="block text-sm font-medium text-slate-700 xl:col-start-1" htmlFor="resolution-note">
               Resolution details (optional)
               <textarea id="resolution-note" value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} maxLength={10000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 p-3 font-normal" />
             </label>
           )}
           {ticket.status === 'resolved' && notificationQuery.data && notificationQuery.data.status !== 'not_started' && (
-            <div className="mt-4 text-sm text-slate-700" role="status">
+            <div className="text-sm text-slate-700 xl:col-start-1" role="status">
               Resolution email: <strong className="capitalize">{notificationQuery.data.status}</strong>
               {notificationQuery.data.status === 'failed' && notificationQuery.data.attempt_count < notificationQuery.data.max_attempts && (
                 <button type="button" onClick={retryResolutionNotification} className="ml-3 rounded border border-slate-300 px-3 py-1 font-medium hover:bg-slate-50">Retry email</button>
               )}
             </div>
           )}
-          <section className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50/50 p-4">
-            <h2 className="font-semibold text-slate-900">WhatsApp contact and notifications</h2>
-            <p className="mt-1 text-sm text-slate-600">Current number: {whatsappQuery.data?.contact.number || 'Not set'} · Consent: {whatsappQuery.data?.contact.consent ? 'Granted' : 'Not granted'}</p>
-            <form onSubmit={saveWhatsAppContact} className="mt-3 flex flex-wrap items-end gap-3">
-              <label className="text-sm">WhatsApp number (include country code)
-                <input value={whatsappNumber} onChange={(event) => setWhatsappNumber(event.target.value)} placeholder="+14155550123" className="mt-1 block rounded border border-slate-300 p-2" />
-              </label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={whatsappConsent} onChange={(event) => setWhatsappConsent(event.target.checked)} /> Customer consent recorded</label>
-              <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white">Save contact</button>
-            </form>
-            <div className="mt-3 space-y-2 text-sm">
-              {(whatsappQuery.data?.notifications ?? []).map((item) => <div key={item.id} className="flex flex-wrap items-center gap-3">
-                <span>WhatsApp: <strong className="capitalize">{item.status}</strong></span>
-                {item.status === 'failed' && item.error_code && <span className="text-red-700">
-                  Reason: {item.error_code.startsWith('twilio_') ? (
-                    <><a className="underline" href="https://www.twilio.com/docs/api/errors" target="_blank" rel="noreferrer">Twilio error {item.error_code.slice('twilio_'.length)}</a>. Check the provider detail below.</>
-                  ) : item.error_code.startsWith('provider_rejected_') ? `Twilio rejected the request (${item.error_code.slice('provider_rejected_'.length)}).` : item.error_code}
-                </span>}
-                {item.status === 'failed' && item.error_detail && <span className="basis-full text-red-700">{item.error_detail}</span>}
-                {item.status === 'failed' && item.error_code === 'twilio_572002' && (
-                  <span className="basis-full text-red-700">
-                    This Twilio trial account cannot message this recipient until the number is verified. Verify it in Twilio Console or upgrade the account, then retry.
-                    {' '}<a className="underline" href="https://www.twilio.com/docs/usage/tutorials/how-to-use-your-free-trial-account" target="_blank" rel="noreferrer">Twilio trial requirements</a>
-                  </span>
+          <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white xl:col-start-2 xl:row-start-4" aria-labelledby="whatsapp-heading">
+            <div className="border-b border-slate-200 px-4 py-3.5">
+              <h2 id="whatsapp-heading" className="text-sm font-semibold text-slate-900">WhatsApp</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Customer contact and notification status</p>
+            </div>
+
+            <div className="space-y-4 p-4">
+              <div>
+                <p className="text-xs font-medium text-slate-500">Current contact</p>
+                <p className="mt-1 break-all text-sm font-semibold text-slate-900">
+                  {whatsappQuery.data?.contact?.number || 'No number saved'}
+                </p>
+                {whatsappQuery.data?.contact?.consent ? (
+                  <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                    <Check className="size-3.5" aria-hidden="true" /> Customer consent recorded
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-slate-500">Customer consent not recorded</p>
                 )}
-                {item.last_attempt_at && <span>Last attempt: {new Date(item.last_attempt_at).toLocaleString()}</span>}
-                {item.delivered_at && <span>Delivered: {new Date(item.delivered_at).toLocaleString()}</span>}
-                {item.status === 'failed' && <button type="button" disabled={retryingWhatsAppId !== null} onClick={() => retryWhatsApp(item.id)} className="rounded border border-slate-300 px-3 py-1 font-medium hover:bg-white disabled:opacity-50">{retryingWhatsAppId === item.id ? 'Retrying...' : item.attempt_count < item.max_attempts ? 'Retry WhatsApp' : 'Retry after fixing Twilio'}</button>}
-              </div>)}
+              </div>
+
+              <div className="border-t border-slate-200" />
+
+              <form onSubmit={saveWhatsAppContact} className="space-y-3">
+                <label htmlFor="whatsapp-number" className="block text-xs font-medium text-slate-700">
+                  WhatsApp number
+                  <input
+                    id="whatsapp-number"
+                    type="tel"
+                    autoComplete="tel"
+                    inputMode="tel"
+                    value={whatsappNumber}
+                    onChange={(event) => setWhatsappNumber(event.target.value)}
+                    placeholder="Enter number with country code"
+                    className="mt-1.5 block h-10 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
+                <label htmlFor="whatsapp-consent" className="flex cursor-pointer items-center gap-2.5 rounded-md py-1 text-sm text-slate-700">
+                  <input
+                    id="whatsapp-consent"
+                    type="checkbox"
+                    checked={whatsappConsent}
+                    onChange={(event) => setWhatsappConsent(event.target.checked)}
+                    className="size-4 shrink-0 cursor-pointer rounded border-slate-300 accent-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500"
+                  />
+                  <span>Customer consent recorded</span>
+                </label>
+                <Button type="submit" size="sm" className="w-full">Save contact</Button>
+              </form>
+
+              <div className="border-t border-slate-200" />
+
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notifications</h3>
+                {(whatsappQuery.data?.notifications ?? []).map((item) => (
+                  <div key={item.id} className="min-w-0 rounded-md border border-slate-200 px-3 py-3" role="status">
+                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                      <StatusBadge status={item.status} />
+                      {item.last_attempt_at && (
+                        <time className="inline-flex min-w-0 items-center gap-1.5 text-xs text-slate-500" dateTime={item.last_attempt_at}>
+                          <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+                          <span>{new Date(item.last_attempt_at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                        </time>
+                      )}
+                    </div>
+                    {item.status === 'failed' && item.error_code && (
+                      <p className="mt-2 break-words text-xs text-red-700">
+                        {item.error_code.startsWith('meta_') ? `Meta WhatsApp error ${item.error_code.slice('meta_'.length)}.` : item.error_code.startsWith('provider_rejected_') ? `Meta WhatsApp rejected the request (${item.error_code.slice('provider_rejected_'.length)}).` : item.error_code}
+                      </p>
+                    )}
+                    {item.status === 'failed' && item.error_detail && <p className="mt-1 break-words text-xs text-red-700">{item.error_detail}</p>}
+                    {item.delivered_at && (
+                      <p className="mt-2 text-xs text-emerald-700">
+                        Delivered {new Date(item.delivered_at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                    )}
+                    {item.status === 'failed' && (
+                      <Button type="button" variant="outline" size="sm" className="mt-3 w-full" disabled={retryingWhatsAppId !== null} onClick={() => void retryWhatsApp(item.id)}>
+                        {retryingWhatsAppId === item.id && <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />}
+                        {retryingWhatsAppId === item.id ? 'Retrying…' : item.attempt_count < item.max_attempts ? 'Retry WhatsApp' : 'Retry after fixing'}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {whatsappQuery.isLoading && <p className="text-xs text-slate-500">Loading notification history…</p>}
+                {whatsappQuery.isError && <p className="text-xs text-red-700">Unable to load WhatsApp history.</p>}
+                {!whatsappQuery.isLoading && !whatsappQuery.isError && !whatsappQuery.data?.notifications.length && (
+                  <p className="text-xs text-slate-500">No WhatsApp notifications yet.</p>
+                )}
+              </div>
             </div>
           </section>
-          {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
-          {suggestionError && <p className="mt-3 text-sm text-red-600">{suggestionError}</p>}
+          {actionError && <p className="text-sm text-red-600 xl:col-span-2" role="alert">{actionError}</p>}
+          {suggestionError && <p className="text-sm text-red-600 xl:col-span-2" role="alert">{suggestionError}</p>}
           {ticket.ai_summary && (
-            <div className="mt-5 min-w-0 rounded-lg bg-blue-50 p-4 text-sm text-blue-900 [overflow-wrap:anywhere]">
-              <strong className="block">AI summary:</strong>
+            <div className="min-w-0 rounded-lg border border-blue-100 bg-blue-50/60 p-4 text-sm text-blue-900 [overflow-wrap:anywhere] xl:col-start-2">
+              <strong className="block"><Sparkles className="mr-1 inline size-4" aria-hidden="true" />AI summary</strong>
               <p className="mt-1 whitespace-pre-wrap break-words">{ticket.ai_summary}</p>
               {ticket.ai_category_confidence !== null && ticket.ai_category_confidence !== undefined && (
                 <span className="ml-2 text-blue-700">
@@ -485,17 +556,17 @@ const TicketDetail: React.FC = () => {
             </div>
           )}
           {ticket.attachments && ticket.attachments.length > 0 && (
-            <div className="mt-5">
+            <div className="xl:col-start-2">
               <h2 className="text-sm font-semibold text-slate-900">Attachments</h2>
               <div className="mt-2 flex flex-wrap gap-2">
                 {ticket.attachments.map((attachment) => (
                   <a
                     key={attachment.id}
                     href={`${API_BASE_URL}${attachment.download_url}`}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50"
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-blue-700 transition hover:bg-blue-50"
                     download={attachment.filename}
                   >
-                    Download {attachment.filename}
+                    <Paperclip className="size-4" aria-hidden="true" />{attachment.filename}
                   </a>
                 ))}
               </div>
@@ -503,23 +574,27 @@ const TicketDetail: React.FC = () => {
           )}
         </section>
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-slate-900">Messages</h2>
+          <div className="flex items-end justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Conversation</h2>
+              <p className="text-xs text-slate-500">{conversationMessages.length} message{conversationMessages.length === 1 ? '' : 's'}</p>
+            </div>
+          </div>
           {conversationMessages.length === 0 ? (
-            <p className="text-sm text-slate-500">No messages yet.</p>
+            <EmptyState title="No messages yet" description="Customer messages and agent replies will appear here." />
           ) : conversationMessages.map((message) => (
-            <article key={message.id} className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase text-slate-500">
-                  {message.is_ai_generated && message.is_draft ? 'AI suggested reply' : message.message_type}
-                </p>
+            <article key={message.id} className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold capitalize text-slate-800">
+                    {message.is_ai_generated && message.is_draft ? 'AI suggested reply' : message.message_type}
+                  </p>
+                  <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500"><Clock3 className="size-3" aria-hidden="true" />{new Date(message.created_at).toLocaleString()}</p>
+                </div>
                 {message.is_ai_generated && message.is_draft && (
-                  <button
-                    type="button"
-                    onClick={() => acceptSuggestion(message)}
-                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                  >
-                    Accept suggestion
-                  </button>
+                  <Button type="button" size="sm" onClick={() => acceptSuggestion(message)}>
+                    <Check className="size-4" aria-hidden="true" /> Use reply
+                  </Button>
                 )}
               </div>
               {message.is_ai_generated && message.is_draft ? (
@@ -528,44 +603,40 @@ const TicketDetail: React.FC = () => {
                   value={suggestionDraft || message.body}
                   onChange={(event) => setSuggestionDraft(event.target.value)}
                   rows={5}
-                  className="mt-2 w-full rounded-lg border border-blue-200 p-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="mt-3 w-full rounded-md border border-blue-200 bg-blue-50/40 p-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               ) : (
-                <p className="mt-2 min-w-0 whitespace-pre-wrap break-words text-sm text-slate-800 [overflow-wrap:anywhere]">{message.body}</p>
+                <p className="mt-3 min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 [overflow-wrap:anywhere]">{message.body}</p>
               )}
             </article>
           ))}
         </section>
-        <form onSubmit={addReply} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <label htmlFor="reply" className="text-lg font-semibold text-slate-900">
-            Add final reply
-          </label>
-          <button
-            type="button"
-            onClick={suggestReply}
-            disabled={isSuggesting}
-            className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-          >
-            {isSuggesting ? 'Generating suggestion...' : 'Suggest reply with AI'}
-          </button>
+        <form onSubmit={addReply} className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <label htmlFor="reply" className="text-sm font-semibold text-slate-900">Reply to customer</label>
+            <Button type="button" variant="outline" size="sm" onClick={suggestReply} disabled={isSuggesting}>
+              {isSuggesting ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <WandSparkles className="size-4" aria-hidden="true" />}
+              {isSuggesting ? 'Generating suggestion…' : 'Suggest with AI'}
+            </Button>
+          </div>
           <textarea
             id="reply"
             value={reply}
             onChange={(event) => setReply(event.target.value)}
             rows={4}
-            placeholder="Write a response for the requester..."
-            className="mt-3 w-full rounded-lg border border-slate-300 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            placeholder="Write a response for the requester…"
+            className="w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
           />
-          <button
-            type="submit"
-            disabled={isSaving || !reply.trim()}
-            className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {isSaving ? 'Sending...' : 'Add reply'}
-          </button>
+          <div className="mt-3 flex justify-end">
+            <Button type="submit" disabled={isSaving || !reply.trim()}>
+              {isSaving ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Send className="size-4" aria-hidden="true" />}
+              {isSaving ? 'Sending…' : 'Add reply'}
+            </Button>
+          </div>
         </form>
       </div>
     </main>
+    </>
   );
 };
 

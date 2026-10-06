@@ -1,10 +1,15 @@
-import React, { useState, useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowDown, ArrowUp, BarChart3, ChevronLeft, ChevronRight, LoaderCircle, Mail, RefreshCw, Search, Ticket as TicketIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import NavBar from './components/NavBar';
 import { AuthContext } from './context/AuthContext';
-import { Link } from 'react-router-dom';
 import { apiJson, getCsrfToken } from './api';
 import { Ticket } from './types';
+import { CategoryBadge, PriorityBadge, StatusBadge } from './components/ui/Badge';
+import { EmptyState } from './components/ui/EmptyState';
+import { PageHeader } from './components/ui/PageHeader';
+import { Button } from './components/ui/button';
 
 const TICKETS_PER_PAGE = 30;
 
@@ -26,7 +31,7 @@ const App: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<'all' | 'high-urgent'>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(1);
   const [isSyncingEmail, setIsSyncingEmail] = useState(false);
@@ -53,66 +58,15 @@ const App: React.FC = () => {
   });
 
   const tickets = ticketsQuery.data?.results ?? [];
-  const filteredTickets = tickets;
-  const loading = ticketsQuery.isLoading;
-  const error = ticketsQuery.error instanceof Error ? ticketsQuery.error.message : null;
   const totalTickets = ticketsQuery.data?.count ?? 0;
   const firstTicketOnPage = totalTickets === 0 ? 0 : (page - 1) * TICKETS_PER_PAGE + 1;
   const lastTicketOnPage = Math.min(page * TICKETS_PER_PAGE, totalTickets);
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority?.toLowerCase()) {
-      case 'urgent':
-        return 'bg-rose-100 text-rose-800 border-rose-300';
-      case 'high':
-        return 'bg-red-50 text-red-700 border-red-200';
-      case 'medium':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'low':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      default:
-        return 'bg-slate-50 text-slate-700 border-slate-200';
-    }
+  const setStatus = (status: string) => {
+    setFilterStatus(status);
+    setPage(1);
   };
-
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'open':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'resolved':
-      case 'closed':
-        return 'bg-slate-100 text-slate-600 border-slate-200';
-      default:
-        return 'bg-slate-50 text-slate-700 border-slate-200';
-    }
-  };
-
-  const getCategoryBadge = (category?: string) => {
-    switch (category?.toLowerCase()) {
-      case 'technical':
-        return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'refund':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'general':
-      default:
-        return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
-  };
-
-  const formatCategoryName = (category?: string) => {
-    switch (category?.toLowerCase()) {
-      case 'technical':
-        return 'Technical';
-      case 'refund':
-        return 'Refund';
-      case 'general':
-      default:
-        return 'General';
-    }
-  };
-
   const toggleSort = () => {
-    setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    setSortOrder((previous) => (previous === 'desc' ? 'asc' : 'desc'));
     setPage(1);
   };
 
@@ -123,10 +77,7 @@ const App: React.FC = () => {
       const csrfToken = await getCsrfToken();
       const result = await apiJson<{ matched: number; created: number; skipped: number; errors: number }>(
         '/api/email-ingestion/sync/',
-        {
-          method: 'POST',
-          headers: { 'X-CSRFToken': csrfToken },
-        },
+        { method: 'POST', headers: { 'X-CSRFToken': csrfToken } },
       );
       setPage(1);
       await queryClient.invalidateQueries({ queryKey: ['tickets'] });
@@ -145,343 +96,318 @@ const App: React.FC = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <NavBar />
+  const statCards = [
+    { label: 'Total tickets', value: ticketsQuery.data?.stats.total, icon: TicketIcon, color: 'text-slate-500' },
+    { label: 'Open tickets', value: ticketsQuery.data?.stats.open, icon: LoaderCircle, color: 'text-blue-600' },
+    { label: 'High / urgent', value: ticketsQuery.data?.stats.high_urgent, icon: BarChart3, color: 'text-orange-600' },
+    { label: 'Resolved', value: ticketsQuery.data?.stats.resolved, icon: TicketIcon, color: 'text-emerald-600' },
+  ];
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome and Summary Banner */}
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 mb-8 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-                Welcome back, {auth?.user?.username || 'Agent'} 👋
-              </h1>
-              <p className="text-sm text-slate-500 mt-1">
-                Manage, monitor, and resolve customer support tickets across your channels.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Link
-                to="/dashboard"
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                View Analytics Dashboard
-              </Link>
-              <button
-                type="button"
-                onClick={() => void refreshTickets()}
-                disabled={ticketsQuery.isFetching || isSyncingEmail}
-                className="inline-flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer disabled:cursor-wait disabled:opacity-60"
-                aria-label={isSyncingEmail ? 'Checking mailbox and refreshing tickets' : 'Refresh tickets'}
-              >
-                <svg className={`w-4 h-4 text-slate-500 ${isSyncingEmail || ticketsQuery.isFetching ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {isSyncingEmail ? 'Checking mail...' : 'Refresh'}
-              </button>
-            </div>
-          </div>
+  return (
+    <>
+      <NavBar />
+      <main className="app-main">
+        <div className="mx-auto max-w-[1440px]">
+          <PageHeader
+            title="Tickets"
+            description={`${totalTickets} total · ${ticketsQuery.data?.stats.open ?? 0} open · ${ticketsQuery.data?.stats.resolved ?? 0} resolved`}
+            actions={
+              <>
+                <Link
+                  to="/dashboard"
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <BarChart3 className="size-4" aria-hidden="true" />
+                  Analytics
+                </Link>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={ticketsQuery.isFetching || isSyncingEmail}
+                  onClick={() => void refreshTickets()}
+                  aria-label={isSyncingEmail ? 'Checking mailbox and refreshing tickets' : 'Refresh tickets'}
+                >
+                  <RefreshCw className={`size-4 ${isSyncingEmail || ticketsQuery.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                  {isSyncingEmail ? 'Checking mail…' : 'Refresh'}
+                </Button>
+              </>
+            }
+          />
 
           {refreshMessage && (
-            <p className="mt-3 text-sm text-slate-500" role="status" aria-live="polite">
+            <p className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800" role="status" aria-live="polite">
               {refreshMessage}
             </p>
           )}
 
-          {/* Quick Metrics */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">
-            <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-100">
-              <span className="text-xs font-medium text-slate-500">Total Tickets</span>
-              <p className="text-2xl font-bold text-slate-900 mt-1">{ticketsQuery.data?.stats.total ?? 0}</p>
-            </div>
-            <div className="bg-blue-50/50 p-3.5 rounded-xl border border-blue-100/50">
-              <span className="text-xs font-medium text-blue-600">Open Tickets</span>
-              <p className="text-2xl font-bold text-blue-700 mt-1">
-                {ticketsQuery.data?.stats.open ?? 0}
-              </p>
-            </div>
-            <div className="bg-amber-50/50 p-3.5 rounded-xl border border-amber-100/50">
-              <span className="text-xs font-medium text-amber-600">High / Urgent</span>
-              <p className="text-2xl font-bold text-amber-700 mt-1">
-                {ticketsQuery.data?.stats.high_urgent ?? 0}
-              </p>
-            </div>
-            <div className="bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-100/50">
-              <span className="text-xs font-medium text-emerald-600">Resolved</span>
-              <p className="text-2xl font-bold text-emerald-700 mt-1">
-                {ticketsQuery.data?.stats.resolved ?? 0}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Filter, Search, and Sort Bar */}
-        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden mb-6">
-          <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-              {/* Search */}
-              <div className="relative flex-1 max-w-md">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+          <section aria-label="Ticket overview" className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            {statCards.map(({ label, value, icon: Icon, color }) => (
+              <div key={label} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-slate-500">{label}</p>
+                  <Icon className={`size-4 ${color}`} aria-hidden="true" />
                 </div>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Search ticket #, subject, or email..."
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
-                />
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                  {value ?? (ticketsQuery.isLoading ? '—' : 0)}
+                </p>
               </div>
+            ))}
+          </section>
 
-              {/* Sort Order Control */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-500">Sort by date:</span>
+          <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="space-y-4 border-b border-slate-200 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <label className="relative block w-full lg:max-w-md">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Search ticket, subject, or customer…"
+                    aria-label="Search tickets"
+                    className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={toggleSort}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition cursor-pointer"
-                  title="Click to toggle creation date sort order"
+                  className="inline-flex h-9 w-fit items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  title="Toggle ticket creation date sort order"
                 >
-                  <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    {sortOrder === 'desc' ? (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    ) : (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    )}
-                  </svg>
+                  {sortOrder === 'desc' ? <ArrowDown className="size-4" aria-hidden="true" /> : <ArrowUp className="size-4" aria-hidden="true" />}
                   {sortOrder === 'desc' ? 'Newest first' : 'Oldest first'}
                 </button>
               </div>
-            </div>
 
-            {/* Filter Rows: Status and Category */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-100">
-              {/* Filter by status */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-                <span className="text-xs font-medium text-slate-400 mr-1">Status:</span>
-                {(['all', 'open', 'resolved', 'closed'] as const).map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => {
-                      setFilterStatus(st);
-                      setPage(1);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer capitalize ${
-                      filterStatus === st
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {st}
-                  </button>
-                ))}
-              </div>
-
-              {/* Filter by category */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-                <span className="text-xs font-medium text-slate-400 mr-1">Category:</span>
-                {(
-                  [
-                    { id: 'all', label: 'All Categories' },
-                    { id: 'general', label: 'General' },
-                    { id: 'technical', label: 'Technical' },
-                    { id: 'refund', label: 'Refund' },
-                  ] as const
-                ).map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => {
-                      setFilterCategory(cat.id);
-                      setPage(1);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                      filterCategory === cat.id
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Filter by priority */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-                <span className="text-xs font-medium text-slate-400 mr-1">Priority:</span>
-                {([
-                  { id: 'all', label: 'All Priorities' },
-                  { id: 'high-urgent', label: 'High / Urgent' },
-                ] as const).map((priority) => (
-                  <button
-                    key={priority.id}
-                    onClick={() => {
-                      setFilterPriority(priority.id);
-                      setPage(1);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                      filterPriority === priority.id
-                        ? 'bg-rose-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {priority.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Tickets Table / List */}
-          {error ? (
-            <div className="p-6 text-center">
-              <p className="text-sm text-red-600">{error}</p>
-              <button
-                onClick={() => void ticketsQuery.refetch()}
-                className="mt-2 text-xs font-semibold text-blue-600 hover:underline cursor-pointer"
-              >
-                Try again
-              </button>
-            </div>
-          ) : loading ? (
-            <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-3">
-              <svg className="animate-spin h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-              </svg>
-              <span className="text-sm">Loading tickets...</span>
-            </div>
-          ) : filteredTickets.length === 0 ? (
-            <div className="p-12 text-center text-slate-500">
-              <svg className="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="text-base font-medium text-slate-700">No tickets found</p>
-              <p className="text-xs text-slate-400 mt-1">
-                {searchQuery || filterStatus !== 'all' || filterCategory !== 'all' || filterPriority !== 'all'
-                  ? 'Try adjusting your search query, status, or category filter.'
-                  : 'New customer support tickets will appear here.'}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100">
-                <thead className="bg-slate-50/70">
-                  <tr>
-                    <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Ticket
-                    </th>
-                    <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Subject
-                    </th>
-                    <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Category
-                    </th>
-                    <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th scope="col" className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Priority
-                    </th>
-                    <th
-                      scope="col"
-                      onClick={toggleSort}
-                      className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-800 select-none"
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-1 overflow-x-auto" aria-label="Filter tickets by status">
+                  {(['all', 'open', 'resolved', 'closed'] as const).map((status) => (
+                    <button
+                      type="button"
+                      key={status}
+                      onClick={() => setStatus(status)}
+                      aria-pressed={filterStatus === status}
+                      className={`shrink-0 rounded-md px-3 py-1.5 text-sm font-medium capitalize transition ${
+                        filterStatus === status ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'
+                      }`}
                     >
-                      <div className="inline-flex items-center gap-1">
-                        <span>Created</span>
-                        <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          {sortOrder === 'desc' ? (
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          ) : (
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                          )}
-                        </svg>
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-100">
-                  {filteredTickets.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
-                        <Link to={`/tickets/${t.id}`} className="hover:underline">
-                          {t.ticket_number}
-                        </Link>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-900">
-                        <div className="font-medium text-slate-900">{t.subject}</div>
-                        {t.requester_email && (
-                          <div className="text-xs text-slate-400 mt-0.5">{t.requester_email}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getCategoryBadge(t.category || t.classification)}`}>
-                          {formatCategoryName(t.category || t.classification)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize ${getStatusBadge(t.status)}`}>
-                          {t.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize ${getPriorityBadge(t.priority)}`}>
-                          {t.priority}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500">
-                        {new Date(t.created_at).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </td>
-                    </tr>
+                      {status === 'all' ? 'All statuses' : status}
+                    </button>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {ticketsQuery.data && totalTickets > 0 && (
-            <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <p className="text-sm text-slate-500" aria-live="polite">
-                Showing {firstTicketOnPage}–{lastTicketOnPage} of {totalTickets} tickets
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  disabled={!ticketsQuery.data.previous || ticketsQuery.isFetching}
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-slate-500">
-                  Page {page} of {Math.ceil(totalTickets / TICKETS_PER_PAGE)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage((current) => current + 1)}
-                  disabled={!ticketsQuery.data.next || ticketsQuery.isFetching}
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Next
-                </button>
+                </div>
+                <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:flex-wrap sm:items-center">
+                  <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    Category
+                    <select
+                      value={filterCategory}
+                      onChange={(event) => {
+                        setFilterCategory(event.target.value);
+                        setPage(1);
+                      }}
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-normal text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="all">All categories</option>
+                      <option value="general">General</option>
+                      <option value="technical">Technical</option>
+                      <option value="refund">Refund</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    Priority
+                    <select
+                      value={filterPriority}
+                      onChange={(event) => {
+                        setFilterPriority(event.target.value as 'all' | 'high-urgent');
+                        setPage(1);
+                      }}
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-normal text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="all">All priorities</option>
+                      <option value="high-urgent">High / urgent</option>
+                    </select>
+                  </label>
+                  {(filterCategory !== 'all' || filterPriority !== 'all' || filterStatus !== 'all' || searchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatus('all');
+                        setFilterCategory('all');
+                        setFilterPriority('all');
+                        setSearchQuery('');
+                        setPage(1);
+                      }}
+                      className="w-fit text-xs font-medium text-blue-700 hover:text-blue-800 hover:underline"
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          )}
+
+            {ticketsQuery.isError ? (
+              <div className="flex flex-col items-center justify-center gap-2 px-5 py-12 text-center">
+                <p className="text-sm font-medium text-slate-800">Unable to load tickets</p>
+                <p className="text-sm text-red-700">
+                  {ticketsQuery.error instanceof Error ? ticketsQuery.error.message : 'Please try again.'}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => void ticketsQuery.refetch()}>
+                  Try again
+                </Button>
+              </div>
+            ) : ticketsQuery.isLoading ? (
+              <div className="space-y-3 p-4" aria-label="Loading tickets">
+                {Array.from({ length: 6 }, (_, index) => (
+                  <div key={index} className="grid grid-cols-4 gap-4 py-3">
+                    <span className="h-4 animate-pulse rounded bg-slate-100" />
+                    <span className="col-span-2 h-4 animate-pulse rounded bg-slate-100" />
+                    <span className="h-4 animate-pulse rounded bg-slate-100" />
+                  </div>
+                ))}
+              </div>
+            ) : tickets.length === 0 ? (
+              <EmptyState
+                title="No tickets found"
+                description={
+                  searchQuery || filterStatus !== 'all' || filterCategory !== 'all' || filterPriority !== 'all'
+                    ? 'Try adjusting your search or filters.'
+                    : 'New customer support tickets will appear here.'
+                }
+                action={
+                  searchQuery || filterStatus !== 'all' || filterCategory !== 'all' || filterPriority !== 'all' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setStatus('all');
+                        setFilterCategory('all');
+                        setFilterPriority('all');
+                        setSearchQuery('');
+                        setPage(1);
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <>
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[1050px] table-fixed">
+                    <colgroup>
+                      <col className="w-[22%]" />
+                      <col className="w-[35%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[10%]" />
+                    </colgroup>
+                    <thead className="bg-slate-50">
+                      <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <th scope="col" className="whitespace-nowrap px-4 py-3">Ticket</th>
+                        <th scope="col" className="px-4 py-3">Subject / customer</th>
+                        <th scope="col" className="whitespace-nowrap px-4 py-3">Category</th>
+                        <th scope="col" className="whitespace-nowrap px-4 py-3">Status</th>
+                        <th scope="col" className="whitespace-nowrap px-4 py-3">Priority</th>
+                        <th scope="col" className="whitespace-nowrap px-4 py-3">
+                          <button type="button" onClick={toggleSort} className="inline-flex items-center gap-1 transition hover:text-slate-900">
+                            Created
+                            {sortOrder === 'desc' ? <ArrowDown className="size-3" aria-hidden="true" /> : <ArrowUp className="size-3" aria-hidden="true" />}
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {tickets.map((ticket) => (
+                        <tr key={ticket.id} className="transition-colors hover:bg-slate-50/80">
+                          <td className="overflow-hidden px-4 py-3.5 align-middle">
+                            <Link to={`/tickets/${ticket.id}`} title={ticket.ticket_number} className="block max-w-full truncate whitespace-nowrap text-sm font-semibold text-blue-700 hover:text-blue-800 hover:underline">
+                              {ticket.ticket_number}
+                            </Link>
+                          </td>
+                          <td className="min-w-0 overflow-hidden px-4 py-3.5 align-middle">
+                            <Link to={`/tickets/${ticket.id}`} title={ticket.subject} className="block max-w-full truncate text-sm font-medium text-slate-800 hover:text-blue-700">
+                              {ticket.subject}
+                            </Link>
+                            {ticket.requester_email && (
+                              <p className="mt-0.5 max-w-full truncate text-xs text-slate-500" title={ticket.requester_email}>{ticket.requester_email}</p>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3.5 align-middle"><CategoryBadge category={ticket.category || ticket.classification || 'general'} /></td>
+                          <td className="whitespace-nowrap px-4 py-3.5 align-middle"><StatusBadge status={ticket.status} /></td>
+                          <td className="whitespace-nowrap px-4 py-3.5 align-middle"><PriorityBadge priority={ticket.priority} /></td>
+                          <td className="whitespace-nowrap px-4 py-3.5 align-middle text-xs text-slate-500">
+                            {new Date(ticket.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="divide-y divide-slate-100 md:hidden">
+                  {tickets.map((ticket) => (
+                    <Link
+                      key={ticket.id}
+                      to={`/tickets/${ticket.id}`}
+                      className="block px-4 py-4 transition-colors hover:bg-slate-50 focus-visible:bg-blue-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-blue-700">{ticket.ticket_number}</p>
+                          <p className="mt-1 truncate text-sm font-semibold text-slate-900">{ticket.subject}</p>
+                          <p className="mt-0.5 truncate text-xs text-slate-500">{ticket.requester_email}</p>
+                        </div>
+                        <StatusBadge status={ticket.status} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <CategoryBadge category={ticket.category || ticket.classification || 'general'} />
+                        <PriorityBadge priority={ticket.priority} />
+                        <span className="text-xs text-slate-500">
+                          {new Date(ticket.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {ticketsQuery.data && totalTickets > 0 && (
+              <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500" aria-live="polite">
+                  Showing {firstTicketOnPage}–{lastTicketOnPage} of {totalTickets} tickets
+                </p>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={!ticketsQuery.data.previous || ticketsQuery.isFetching}
+                  >
+                    <ChevronLeft className="size-4" aria-hidden="true" /> Previous
+                  </Button>
+                  <span className="text-xs text-slate-500">
+                    Page {page} of {Math.ceil(totalTickets / TICKETS_PER_PAGE)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((current) => current + 1)}
+                    disabled={!ticketsQuery.data.next || ticketsQuery.isFetching}
+                  >
+                    Next <ChevronRight className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       </main>
-    </div>
+    </>
   );
 };
 
