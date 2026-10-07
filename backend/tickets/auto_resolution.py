@@ -25,7 +25,6 @@ class ResolutionMatch:
 class GeneratedResolution:
     response: str
     confidence: float
-    needs_review: bool
     prompt: str
 
 
@@ -180,7 +179,6 @@ def generate_resolution(ticket: Ticket, matches: list[ResolutionMatch]) -> Gener
 
     reply = data.get("response")
     confidence = data.get("confidence")
-    needs_review = data.get("needs_review")
     if (
         not isinstance(reply, str)
         or not reply.strip()
@@ -189,14 +187,12 @@ def generate_resolution(ticket: Ticket, matches: list[ResolutionMatch]) -> Gener
         or isinstance(confidence, bool)
         or not math.isfinite(confidence)
         or not 0 <= confidence <= 1
-        or not isinstance(needs_review, bool)
     ):
         raise ValueError("invalid_response_fields")
 
     return GeneratedResolution(
         response=reply.strip(),
         confidence=float(confidence),
-        needs_review=needs_review,
         prompt=prompt,
     )
 

@@ -306,6 +306,11 @@ class AuthenticationAndUserManagementTests(TestCase):
             {
                 "username": "new-agent",
                 "email": "agent@example.com",
+                "first_name": "New",
+                "last_name": "Agent",
+                "department_id": self.admin.organization.departments.get(
+                    name="Customer Support",
+                ).pk,
                 "role": User.ROLE_AGENT,
                 "password": "AgentPass123!",
             },
@@ -315,6 +320,9 @@ class AuthenticationAndUserManagementTests(TestCase):
         self.assertEqual(response.status_code, 201)
         user = User.objects.get(username="new-agent")
         self.assertTrue(user.check_password("AgentPass123!"))
+        self.assertEqual(user.department.name, "Customer Support")
+        self.assertEqual(response.data["department"], "Customer Support")
+        self.assertEqual(response.data["department_id"], user.department_id)
 
     def test_agent_management_cannot_create_or_delete_admins(self):
         self.client.force_login(self.admin)

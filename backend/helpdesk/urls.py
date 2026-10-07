@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/auth/', include('accounts.urls')),
     path('api/email-ingestion/', include('email_ingestion.urls')),
     path('api/agents/', include('accounts.agent_urls')),
+    path('api/', include('accounts.org_urls')),
     path('api/knowledge-base/', include('knowledge_base.urls')),
     path('', include('django_prometheus.urls')),
     path('admin/', admin.site.urls),

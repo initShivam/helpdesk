@@ -61,6 +61,48 @@ class TicketAIAnalysisTests(TestCase):
 
         self.assertEqual(analysis.priority, "low")
 
+    def test_negated_urgency_is_not_misclassified_as_high(self):
+        analysis = analyze_ticket(
+            "Not urgent request",
+            "This is not urgent; please review it when possible.",
+        )
+
+        self.assertEqual(analysis.priority, "low")
+        self.assertEqual(
+            analyze_ticket("Non urgent request").priority,
+            "low",
+        )
+
+    def test_negated_high_signals_do_not_override_positive_low_signals(self):
+        analysis = analyze_ticket(
+            "Routine access question",
+            "This is not an emergency and there is no rush.",
+        )
+
+        self.assertEqual(analysis.priority, "low")
+        self.assertEqual(
+            analyze_ticket("Service status", "The system is not experiencing an outage.").priority,
+            "medium",
+        )
+
+    def test_positive_high_signal_overrides_nonurgent_language(self):
+        analysis = analyze_ticket(
+            "Not urgent, but the service is down",
+            "We normally are not urgent, but there is a system outage now.",
+        )
+
+        self.assertEqual(analysis.priority, "high")
+
+    def test_high_priority_detection_handles_case_and_not_only_negation(self):
+        self.assertEqual(
+            analyze_ticket("Help needed URGENTLY").priority,
+            "high",
+        )
+        self.assertEqual(
+            analyze_ticket("Not only urgent, but account access is blocked").priority,
+            "high",
+        )
+
     def test_assigns_medium_priority_by_default(self):
         analysis = analyze_ticket("Printer issue", "The printer is not working.")
 

@@ -300,12 +300,12 @@ class AutoResolutionTests(TestCase):
             json.dumps({
                 "response": "Please restart the printer and reconnect it.",
                 "confidence": 0.93,
-                "needs_review": False,
+                "needs_review": True,
             }),
             {},
         ),
     )
-    def test_enabled_auto_send_uses_email_backend_and_records_send(self, generate, matches):
+    def test_high_confidence_auto_send_ignores_model_review_flag(self, generate, matches):
         self.auto_settings.simulation_mode = False
         self.auto_settings.save()
         ticket = self.make_ticket()
@@ -509,23 +509,29 @@ class AutoResolutionTests(TestCase):
     )
     @patch("whatsapp.services.send_whatsapp_message")
     @patch("whatsapp.services.get_state_instance")
-    def test_model_review_request_prevents_whatsapp_send(
+    def test_high_confidence_whatsapp_send_ignores_model_review_flag(
         self, get_state, send_message, generate, matches
     ):
+        from whatsapp.services import GreenApiResult
+
         self.auto_settings.whatsapp_auto_reply = True
         self.auto_settings.simulation_mode = False
         self.auto_settings.save()
         ticket = self.make_ticket(source="whatsapp")
         self.add_whatsapp_contact(ticket)
+        get_state.return_value = GreenApiResult("authorized")
+        send_message.return_value = GreenApiResult(
+            "sent", message_id="green-auto-response-id"
+        )
 
         audit_id = process_auto_resolution.run(ticket.pk)
 
         audit = AutoResolutionAudit.objects.get(pk=audit_id)
-        self.assertEqual(audit.decision, "agent_review")
-        self.assertEqual(audit.decision_reason, "model_requested_review")
-        self.assertEqual(audit.send_status, "not_sent")
-        get_state.assert_not_called()
-        send_message.assert_not_called()
+        self.assertEqual(audit.decision, "auto_sent")
+        self.assertEqual(audit.decision_reason, "confidence_and_safety_checks_passed")
+        self.assertEqual(audit.send_status, "sent")
+        get_state.assert_called_once()
+        send_message.assert_called_once()
 
     @override_settings(
         CELERY_TASK_ALWAYS_EAGER=True,

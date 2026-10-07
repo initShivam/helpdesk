@@ -219,9 +219,6 @@ def process_auto_resolution(ticket_id: int) -> int:
     if not config.enabled or not channel_enabled:
         audit.decision = "agent_review"
         audit.decision_reason = "auto_resolution_disabled_during_generation"
-    elif generated.needs_review:
-        audit.decision = "agent_review"
-        audit.decision_reason = "model_requested_review"
     elif response_requires_manual_review(generated.response):
         audit.decision = "agent_review"
         audit.decision_reason = "unsupported_action_or_promise"

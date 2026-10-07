@@ -61,28 +61,43 @@ _CATEGORY_KEYWORDS = {
     },
 }
 
-_HIGH_PRIORITY_SIGNALS = {
-    "urgent",
-    "emergency",
-    "critical",
-    "immediately",
-    "asap",
-    "system down",
-    "outage",
-    "cannot access",
-    "can't access",
-    "unable to access",
-    "deadline today",
-    "exam today",
-}
-_LOW_PRIORITY_SIGNALS = {
-    "when possible",
-    "not urgent",
-    "general question",
-    "suggestion",
-    "feedback",
-    "information",
-}
+_HIGH_PRIORITY_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\burgent(?:ly)?\b",
+        r"\bemergency\b",
+        r"\bcritical(?:ly)?\b",
+        r"\bimmediate(?:ly)?\b",
+        r"\basap\b",
+        r"\bsystem\s+down\b",
+        r"\boutage\b",
+        r"\b(?:cannot|can't|unable to)\s+access\b",
+        r"\bdeadline\s+today\b",
+        r"\bexam\s+today\b",
+    )
+)
+_LOW_PRIORITY_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bwhen possible\b",
+        r"\bwhen convenient\b",
+        r"\bat your convenience\b",
+        r"\bnot\s+(?:urgent|an emergency|critical)\b",
+        r"\bno rush\b",
+        r"\bnon[- ]urgent\b",
+        r"\bnot time[- ]sensitive\b",
+        r"\blow priority\b",
+        r"\bgeneral question\b",
+        r"\bsuggestion\b",
+        r"\bfeedback\b",
+        r"\binformation\b",
+    )
+)
+_NEGATION_BEFORE_SIGNAL = re.compile(
+    r"\b(?:not(?!\s+only)|no|never|without|non|isn't|aren't|wasn't|weren't|doesn't|don't|didn't)"
+    r"(?:\W+\w+){0,2}\W*$",
+    re.IGNORECASE,
+)
 
 
 def _normalise(text: str) -> str:
@@ -119,12 +134,20 @@ def _summary(subject: str, body: str) -> str:
     return first_sentence[:240].rstrip()
 
 
+def _has_unnegated_high_priority_signal(text: str) -> bool:
+    for pattern in _HIGH_PRIORITY_PATTERNS:
+        for match in pattern.finditer(text):
+            prefix = text[max(0, match.start() - 50):match.start()]
+            if _NEGATION_BEFORE_SIGNAL.search(prefix):
+                continue
+            return True
+    return False
+
+
 def _priority(text: str) -> str:
-    high_matches = sum(signal in text for signal in _HIGH_PRIORITY_SIGNALS)
-    low_matches = sum(signal in text for signal in _LOW_PRIORITY_SIGNALS)
-    if high_matches:
+    if _has_unnegated_high_priority_signal(text):
         return "high"
-    if low_matches:
+    if any(pattern.search(text) for pattern in _LOW_PRIORITY_PATTERNS):
         return "low"
     return "medium"
 

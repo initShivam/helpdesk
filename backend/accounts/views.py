@@ -4,12 +4,19 @@ from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from knox.models import AuthToken
-from rest_framework import response, status, views, viewsets
+from rest_framework import permissions, response, status, views, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import User
+from .models import Department, Team, TeamMember, User
 from .permissions import IsAdmin
-from .serializers import UserSerializer
+from .serializers import (
+    DepartmentSerializer,
+    TeamMemberSerializer,
+    TeamSerializer,
+    UserSerializer,
+)
 
 
 def _authenticate_credentials(request):
@@ -127,8 +134,88 @@ class AgentViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
 
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .filter(organization_id=self.request.user.organization_id)
+            .select_related("department")
+            .prefetch_related("team_memberships__team")
+        )
+
     def perform_create(self, serializer):
         serializer.save(role=User.ROLE_AGENT)
 
     def perform_update(self, serializer):
         serializer.save(role=User.ROLE_AGENT)
+
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return request.method in permissions.SAFE_METHODS or request.user.is_admin()
+
+
+class DepartmentViewSet(viewsets.ModelViewSet):
+    serializer_class = DepartmentSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        queryset = Department.objects.filter(
+            organization_id=self.request.user.organization_id,
+        ).prefetch_related("agents", "teams")
+        if not self.request.user.is_admin():
+            queryset = queryset.filter(
+                is_active=True,
+                agents=self.request.user,
+            )
+        return queryset.distinct()
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=["is_active", "updated_at"])
+        instance.teams.filter(is_default=True).update(is_active=False)
+
+
+class TeamViewSet(viewsets.ModelViewSet):
+    serializer_class = TeamSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        queryset = Team.objects.filter(
+            organization_id=self.request.user.organization_id,
+        ).select_related("department")
+        if not self.request.user.is_admin():
+            queryset = queryset.filter(
+                is_active=True,
+                memberships__agent=self.request.user,
+                memberships__is_active=True,
+            )
+        department_id = self.request.query_params.get("department_id")
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+        return queryset.distinct()
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    @action(detail=True, methods=["get"], url_path="members")
+    def members(self, request, pk=None):
+        team = self.get_object()
+        if not request.user.is_admin() and not TeamMember.objects.filter(
+            team=team,
+            agent=request.user,
+            is_active=True,
+        ).exists():
+            raise PermissionDenied("You cannot view members of this team.")
+        members = (
+            TeamMember.objects.filter(team=team, is_active=True)
+            .select_related("agent")
+            .order_by("agent__last_name", "agent__first_name", "agent__username")
+        )
+        return response.Response(TeamMemberSerializer(members, many=True).data)
